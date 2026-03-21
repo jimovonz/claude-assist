@@ -1,0 +1,228 @@
+import { spawn, type Subprocess } from "bun";
+import { homedir } from "os";
+import { join } from "path";
+
+const DEFAULT_CWD = join(homedir(), "Projects");
+
+export type SessionEvent =
+  | { type: "status"; text: string }
+  | { type: "text"; text: string }
+  | { type: "result"; text: string; sessionId: string };
+
+export interface SessionOptions {
+  channelId: string;
+  workingDirectory?: string;
+  maxTurns?: number;
+  disallowedTools?: string[];
+}
+
+export interface Session {
+  channelId: string;
+  proc: Subprocess;
+  reader: ReadableStreamDefaultReader<Uint8Array>;
+  buffer: string;
+  lastActivity: number;
+}
+
+export class SessionManager {
+  private sessions = new Map<string, Session>();
+  private idleTimeoutMs: number;
+
+  constructor(idleTimeoutMs = 30 * 60 * 1000) {
+    this.idleTimeoutMs = idleTimeoutMs;
+  }
+
+  getSession(channelId: string): Session | undefined {
+    return this.sessions.get(channelId);
+  }
+
+  listSessions(): { channelId: string; lastActivity: number }[] {
+    return Array.from(this.sessions.entries()).map(([channelId, s]) => ({
+      channelId,
+      lastActivity: s.lastActivity,
+    }));
+  }
+
+  private spawnSession(channelId: string, options: SessionOptions): Session {
+    const args = [
+      "-p",
+      "--input-format", "stream-json",
+      "--output-format", "stream-json",
+      "--verbose",
+      "--include-partial-messages",
+    ];
+
+    if (options.maxTurns) {
+      args.push("--max-turns", options.maxTurns.toString());
+    }
+
+    if (options.disallowedTools?.length) {
+      args.push("--disallowed-tools", ...options.disallowedTools);
+    }
+
+    const cwd = options.workingDirectory ?? DEFAULT_CWD;
+
+    console.log(`[session] Spawning persistent claude process for ${channelId}`);
+
+    const proc = spawn({
+      cmd: ["claude", ...args],
+      cwd,
+      stdin: "pipe",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    const reader = proc.stdout!.getReader();
+
+    const session: Session = {
+      channelId,
+      proc,
+      reader,
+      buffer: "",
+      lastActivity: Date.now(),
+    };
+
+    this.sessions.set(channelId, session);
+    return session;
+  }
+
+  async *sendMessage(
+    channelId: string,
+    message: string,
+    options: SessionOptions
+  ): AsyncGenerator<SessionEvent> {
+    let session = this.sessions.get(channelId);
+
+    if (!session || session.proc.exitCode !== null) {
+      if (session) {
+        console.log(`[session] Process for ${channelId} died, respawning`);
+      }
+      session = this.spawnSession(channelId, options);
+    }
+
+    session.lastActivity = Date.now();
+
+    const input = JSON.stringify({
+      type: "user",
+      message: {
+        role: "user",
+        content: [{ type: "text", text: message }],
+      },
+    });
+
+    session.proc.stdin!.write(input + "\n");
+
+    const decoder = new TextDecoder();
+    let lastAssistantText = "";
+
+    while (true) {
+      const { done, value } = await session.reader.read();
+      if (done) {
+        console.log(`[session] Stream ended for ${channelId}`);
+        this.sessions.delete(channelId);
+        break;
+      }
+
+      session.buffer += decoder.decode(value, { stream: true });
+      const parts = session.buffer.split("\n");
+      session.buffer = parts.pop() ?? "";
+
+      for (const part of parts) {
+        const trimmed = part.trim();
+        if (!trimmed) continue;
+
+        try {
+          const msg = JSON.parse(trimmed);
+
+          // Tool use — show what Claude is doing
+          if (msg.type === "assistant") {
+            const content = msg.message?.content;
+            if (Array.isArray(content)) {
+              for (const block of content) {
+                if (block.type === "tool_use") {
+                  const toolName = block.name ?? "unknown";
+                  const input = block.input ?? {};
+                  const detail = describeToolCall(toolName, input);
+                  yield { type: "status", text: detail };
+                }
+                if (block.type === "text" && block.text) {
+                  lastAssistantText = block.text;
+                  // Yield partial text for preview
+                  yield { type: "text", text: block.text };
+                }
+              }
+            }
+          }
+
+          // Final result
+          if (msg.type === "result") {
+            const resultText = (msg.result as string) ?? "";
+            const sessionId = (msg.session_id as string) ?? "";
+            session.lastActivity = Date.now();
+            console.log(`[session] Result for ${channelId}, ${resultText.length} chars`);
+            yield { type: "result", text: resultText, sessionId };
+            return;
+          }
+        } catch {}
+      }
+    }
+  }
+
+  pruneIdle(): string[] {
+    const now = Date.now();
+    const pruned: string[] = [];
+
+    for (const [channelId, session] of this.sessions) {
+      if (now - session.lastActivity > this.idleTimeoutMs) {
+        session.proc.kill();
+        this.sessions.delete(channelId);
+        pruned.push(channelId);
+      }
+    }
+
+    return pruned;
+  }
+
+  removeSession(channelId: string): boolean {
+    const session = this.sessions.get(channelId);
+    if (session) {
+      session.proc.kill();
+      this.sessions.delete(channelId);
+      return true;
+    }
+    return false;
+  }
+}
+
+function describeToolCall(name: string, input: Record<string, unknown>): string {
+  switch (name) {
+    case "Read":
+      return `📖 Reading ${shortenPath(input.file_path as string)}`;
+    case "Glob":
+      return `🔍 Searching for ${input.pattern}`;
+    case "Grep":
+      return `🔍 Searching for "${input.pattern}" in files`;
+    case "Bash":
+      return `⚡ Running command...`;
+    case "Edit":
+      return `✏️ Editing ${shortenPath(input.file_path as string)}`;
+    case "Write":
+      return `📝 Writing ${shortenPath(input.file_path as string)}`;
+    case "Agent":
+      return `🤖 Delegating: ${(input.description as string)?.substring(0, 60) ?? "subtask"}`;
+    case "WebSearch":
+      return `🌐 Searching: ${input.query}`;
+    case "WebFetch":
+      return `🌐 Fetching URL...`;
+    case "ToolSearch":
+      return `🔧 Loading tools...`;
+    default:
+      return `⚙️ Using ${name}...`;
+  }
+}
+
+function shortenPath(path: string | undefined): string {
+  if (!path) return "file";
+  const parts = path.split("/");
+  return parts.length > 2 ? `.../${parts.slice(-2).join("/")}` : path;
+}

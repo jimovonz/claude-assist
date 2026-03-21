@@ -1,0 +1,22 @@
+{
+  "name": "claude-assist",
+  "version": "0.1.0",
+  "description": "Personal AI assistant — multi-channel access to Claude Code",
+  "type": "module",
+  "bin": {
+    "claude-assist": "./bin/claude-assist.ts"
+  },
+  "scripts": {
+    "start": "bun run bin/claude-assist.ts start",
+    "dev": "bun run --watch bin/claude-assist.ts start"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "grammy": "^1.41.1"
+  }
+}
