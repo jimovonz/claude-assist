@@ -1,6 +1,7 @@
 import { spawn, type Subprocess } from "bun";
 import { homedir } from "os";
 import { join } from "path";
+import { loadSessionState, saveSession, removeSession as removePersistedSession, type PersistedSession } from "./state";
 
 const DEFAULT_CWD = join(homedir(), "Projects");
 
@@ -18,29 +19,76 @@ export interface SessionOptions {
 
 export interface Session {
   channelId: string;
+  sessionId?: string;
   proc: Subprocess;
   reader: ReadableStreamDefaultReader<Uint8Array>;
   buffer: string;
   lastActivity: number;
 }
 
+export interface SessionManagerConfig {
+  idleTimeoutMs?: number;
+  command?: string;
+}
+
 export class SessionManager {
   private sessions = new Map<string, Session>();
+  private persistedState = new Map<string, PersistedSession>();
   private idleTimeoutMs: number;
+  private command: string;
+  private startTime = Date.now();
 
-  constructor(idleTimeoutMs = 30 * 60 * 1000) {
-    this.idleTimeoutMs = idleTimeoutMs;
+  constructor(config: SessionManagerConfig = {}) {
+    this.idleTimeoutMs = config.idleTimeoutMs ?? 30 * 60 * 1000;
+    this.command = config.command ?? "claude";
+    this.persistedState = loadSessionState();
   }
 
-  getSession(channelId: string): Session | undefined {
-    return this.sessions.get(channelId);
+  get uptime(): number {
+    return Date.now() - this.startTime;
   }
 
-  listSessions(): { channelId: string; lastActivity: number }[] {
-    return Array.from(this.sessions.entries()).map(([channelId, s]) => ({
+  get activeSessionCount(): number {
+    return this.sessions.size;
+  }
+
+  getSession(channelId: string): (Session & { sessionId?: string }) | undefined {
+    const live = this.sessions.get(channelId);
+    if (live) return live;
+
+    // Return persisted state info (no live proc) so router can access sessionId
+    const persisted = this.persistedState.get(channelId);
+    if (persisted) {
+      return { channelId, sessionId: persisted.sessionId } as any;
+    }
+
+    return undefined;
+  }
+
+  listSessions(): { channelId: string; lastActivity: number; live: boolean }[] {
+    const result: { channelId: string; lastActivity: number; live: boolean }[] = [];
+
+    for (const [channelId, s] of this.sessions) {
+      result.push({ channelId, lastActivity: s.lastActivity, live: true });
+    }
+
+    // Include persisted sessions that aren't currently live
+    for (const [channelId, s] of this.persistedState) {
+      if (!this.sessions.has(channelId)) {
+        result.push({ channelId, lastActivity: s.lastActivity, live: false });
+      }
+    }
+
+    return result;
+  }
+
+  private persistSession(channelId: string, sessionId: string, workingDirectory?: string): void {
+    this.persistedState.set(channelId, {
       channelId,
-      lastActivity: s.lastActivity,
-    }));
+      sessionId,
+      lastActivity: Date.now(),
+    });
+    saveSession(channelId, sessionId, workingDirectory);
   }
 
   private spawnSession(channelId: string, options: SessionOptions): Session {
@@ -51,6 +99,13 @@ export class SessionManager {
       "--verbose",
       "--include-partial-messages",
     ];
+
+    // Resume from persisted session if available
+    const persisted = this.persistedState.get(channelId);
+    if (persisted?.sessionId) {
+      args.push("--resume", persisted.sessionId);
+      console.log(`[session] Resuming session ${persisted.sessionId} for ${channelId}`);
+    }
 
     if (options.maxTurns) {
       args.push("--max-turns", options.maxTurns.toString());
@@ -65,7 +120,7 @@ export class SessionManager {
     console.log(`[session] Spawning persistent claude process for ${channelId}`);
 
     const proc = spawn({
-      cmd: ["claude", ...args],
+      cmd: [this.command, ...args],
       cwd,
       stdin: "pipe",
       stdout: "pipe",
@@ -111,6 +166,7 @@ export class SessionManager {
     });
 
     session.proc.stdin!.write(input + "\n");
+    session.proc.stdin!.flush();
 
     const decoder = new TextDecoder();
     let lastAssistantText = "";
@@ -159,6 +215,13 @@ export class SessionManager {
             const resultText = (msg.result as string) ?? "";
             const sessionId = (msg.session_id as string) ?? "";
             session.lastActivity = Date.now();
+            session.sessionId = sessionId;
+
+            // Persist session ID to disk for restart recovery
+            if (sessionId) {
+              this.persistSession(channelId, sessionId);
+            }
+
             console.log(`[session] Result for ${channelId}, ${resultText.length} chars`);
             yield { type: "result", text: resultText, sessionId };
             return;

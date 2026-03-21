@@ -165,6 +165,17 @@ export class TelegramChannel implements Channel {
     const lines = text.split("\n");
     let chunk = "";
     for (const line of lines) {
+      // Handle single lines that exceed maxLen by splitting at maxLen
+      if (line.length > maxLen) {
+        if (chunk) {
+          await this.bot.api.sendMessage(chatId, chunk);
+          chunk = "";
+        }
+        for (let i = 0; i < line.length; i += maxLen) {
+          await this.bot.api.sendMessage(chatId, line.slice(i, i + maxLen));
+        }
+        continue;
+      }
       if (chunk.length + line.length + 1 > maxLen) {
         if (chunk) await this.bot.api.sendMessage(chatId, chunk);
         chunk = line;

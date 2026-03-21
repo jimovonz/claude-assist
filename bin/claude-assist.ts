@@ -1,9 +1,13 @@
 #!/usr/bin/env bun
 
-import { SessionManager, Router, TelegramChannel } from "../src/conduit";
+import { SessionManager, Router, TelegramChannel, closeDb } from "../src/conduit";
 import { ViewServer } from "../src/views/server";
+import { install, serviceCommand, statusCommand, logsCommand } from "../src/service/systemd";
+import { sdReady, sdStopping, startWatchdog } from "../src/service/watchdog";
+import { startTunnelIfConfigured } from "../src/service/tunnel";
 
 const command = process.argv[2];
+const subcommand = process.argv[3];
 
 function loadEnv() {
   const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -21,15 +25,17 @@ function loadEnv() {
 async function start() {
   const env = loadEnv();
 
-  // Start view server
+  // Set up session manager (loads persisted state from disk)
+  const sessionManager = new SessionManager();
+
+  // Start view server with health provider
   const viewServer = new ViewServer({
     port: env.viewPort,
     baseUrl: env.viewBaseUrl,
+    healthProvider: sessionManager,
   });
   viewServer.start();
 
-  // Set up session manager and router
-  const sessionManager = new SessionManager();
   const router = new Router(sessionManager, viewServer);
 
   const telegram = new TelegramChannel({
@@ -46,31 +52,68 @@ async function start() {
     }
   }, 5 * 60 * 1000);
 
+  // Start Cloudflare Tunnel if configured
+  const tunnel = startTunnelIfConfigured();
+
   // Graceful shutdown
   const shutdown = async () => {
     console.log("\n[conduit] Shutting down...");
+    sdStopping();
+    tunnel?.stop();
     await router.stop();
     viewServer.stop();
+    closeDb();
     process.exit(0);
   };
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 
   await router.start();
+
+  // Signal systemd we're ready and start watchdog
+  sdReady();
+  startWatchdog();
+
+  console.log("[conduit] Service ready");
 }
 
 switch (command) {
   case "start":
     start();
     break;
+
+  case "install":
+    install();
+    break;
+
+  case "service":
+    if (!subcommand || !["start", "stop", "restart"].includes(subcommand)) {
+      console.error("Usage: claude-assist service <start|stop|restart>");
+      process.exit(1);
+    }
+    serviceCommand(subcommand);
+    break;
+
+  case "status":
+    statusCommand();
+    break;
+
+  case "logs":
+    logsCommand(process.argv.includes("-f") || process.argv.includes("--follow"));
+    break;
+
   case undefined:
   case "help":
     console.log(`
 claude-assist — Personal AI assistant via Claude Code
 
 Usage:
-  claude-assist start    Start Conduit (session manager + channels + view server)
-  claude-assist help     Show this message
+  claude-assist start              Start Conduit directly (foreground)
+  claude-assist install            Install systemd user service + enable linger
+  claude-assist service <action>   start | stop | restart the systemd service
+  claude-assist status             Show service status
+  claude-assist logs [-f]          Show service logs (follow with -f)
+  claude-assist help               Show this message
 
 Environment:
   TELEGRAM_BOT_TOKEN     Bot token from @BotFather (required)
@@ -78,6 +121,7 @@ Environment:
   VIEW_BASE_URL          Base URL for view links (default: http://localhost:VIEW_PORT)
 `);
     break;
+
   default:
     console.error(`Unknown command: ${command}`);
     process.exit(1);

@@ -7,16 +7,16 @@ import { join } from "path";
 
 const DEFAULT_CWD = join(homedir(), "Projects");
 
-function stripMetadata(text: string): string {
+export function stripMetadata(text: string): string {
   return text
-    .replace(/^\s*<memory>\n[\s\S]*?<\/memory>\s*$/gm, "")
+    .replace(/^\s*<memory>[\s\S]*?<\/memory>\s*$/gm, "")
     .replace(/<cairn_context[\s\S]*?<\/cairn_context>/g, "")
     .replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "")
     .replace(/^Sources:\n(- \[.*?\]\(.*?\)\n?)*/gm, "")
     .trim();
 }
 
-function summarize(text: string, maxLen = 200): string {
+export function summarize(text: string, maxLen = 200): string {
   const firstPara = text.split("\n\n")[0];
   if (firstPara.length <= maxLen) return firstPara;
   return firstPara.substring(0, maxLen) + "...";
