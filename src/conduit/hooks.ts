@@ -2,8 +2,8 @@ import { spawn } from "bun";
 import { homedir } from "os";
 import { join } from "path";
 
-const CAIRN_DIR = join(homedir(), "Projects", "cairn");
-const PYTHON = join(CAIRN_DIR, ".venv", "bin", "python3");
+const CAIRN_DIR = process.env.CAIRN_DIR ?? join(homedir(), "Projects", "cairn");
+const PYTHON = process.env.CAIRN_PYTHON ?? join(CAIRN_DIR, ".venv", "bin", "python3");
 const STOP_HOOK = join(CAIRN_DIR, "hooks", "stop_hook.py");
 const PROMPT_HOOK = join(CAIRN_DIR, "hooks", "prompt_hook.py");
 
