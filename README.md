@@ -80,7 +80,7 @@ VIEW_BASE_URL=          # Optional — Cloudflare Tunnel URL for view links
 
 ## Architecture
 
-See [DESIGN.md](DESIGN.md) for the full architectural breakdown, design decisions, and lessons learned.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the full architectural breakdown, design decisions, and lessons learned.
 
 ### Components
 
