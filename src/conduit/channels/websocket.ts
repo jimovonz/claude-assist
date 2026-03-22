@@ -87,10 +87,9 @@ export class WebSocketChannel implements Channel {
     this.clients.set(ws, state);
 
     if (state.authenticated) {
-      state.userId = `tui-${randomBytes(4).toString("hex")}`;
-      this.userSockets.set(state.userId, ws);
-      ws.send(JSON.stringify({ type: "auth_ok", userId: state.userId }));
-      console.log(`[tui] Client connected: ${state.userId} (no auth required)`);
+      // No auth token configured — still wait for client auth message to get userId
+      // Don't assign userId here; handleMessage auth path will handle it
+      console.log(`[tui] Client connected (no auth required, awaiting userId)`);
     }
   }
 
@@ -108,27 +107,29 @@ export class WebSocketChannel implements Channel {
 
     // Auth handshake
     if (msg.type === "auth") {
-      if (state.authenticated) return; // already authed
+      if (state.userId) return; // already fully set up
 
-      if (msg.token === this.authToken) {
-        state.authenticated = true;
-        // Use client-provided userId for session persistence, fallback to random
-        state.userId = (typeof msg.userId === "string" && msg.userId)
-          ? msg.userId
-          : `tui-${randomBytes(4).toString("hex")}`;
-        // Close any existing socket for this userId (reconnect replaces old connection)
-        const existing = this.userSockets.get(state.userId);
-        if (existing && existing !== ws) {
-          existing.close(4002, "Replaced by new connection");
-        }
-        this.userSockets.set(state.userId, ws);
-        ws.send(JSON.stringify({ type: "auth_ok", userId: state.userId }));
-        console.log(`[tui] Client authenticated: ${state.userId}`);
-      } else {
+      // Validate token if auth is required
+      if (this.authToken && msg.token !== this.authToken) {
         ws.send(JSON.stringify({ type: "auth_fail", reason: "Invalid token" }));
         ws.close(4001, "Authentication failed");
         console.log(`[tui] Auth failed from client`);
+        return;
       }
+
+      state.authenticated = true;
+      // Use client-provided userId for session persistence, fallback to random
+      state.userId = (typeof msg.userId === "string" && msg.userId)
+        ? msg.userId
+        : `tui-${randomBytes(4).toString("hex")}`;
+      // Close any existing socket for this userId (reconnect replaces old connection)
+      const existing = this.userSockets.get(state.userId);
+      if (existing && existing !== ws) {
+        existing.close(4002, "Replaced by new connection");
+      }
+      this.userSockets.set(state.userId, ws);
+      ws.send(JSON.stringify({ type: "auth_ok", userId: state.userId }));
+      console.log(`[tui] Client authenticated: ${state.userId}`);
       return;
     }
 
