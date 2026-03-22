@@ -2,36 +2,49 @@ import { spawn, type Subprocess } from "bun";
 
 /**
  * Manages a cloudflared tunnel as a child process.
+ * Supports both named tunnels (with token) and quick tunnels (no auth).
  * Auto-restarts on crash.
  */
 export class TunnelManager {
   private proc: Subprocess | null = null;
-  private token: string;
-  private restarting = false;
   private stopped = false;
+  private token?: string;
+  private localUrl: string;
+  private _publicUrl: string | null = null;
+  private urlResolve?: (url: string) => void;
+  private urlPromise: Promise<string>;
 
-  constructor(token: string) {
-    this.token = token;
+  constructor(opts: { token?: string; localUrl: string }) {
+    this.token = opts.token;
+    this.localUrl = opts.localUrl;
+    this.urlPromise = new Promise((resolve) => {
+      this.urlResolve = resolve;
+    });
+  }
+
+  /** Resolves once the tunnel URL is known. */
+  get publicUrl(): Promise<string> {
+    return this.urlPromise;
   }
 
   start(): void {
     if (this.stopped) return;
 
-    console.log("[tunnel] Starting cloudflared...");
+    const cmd = this.token
+      ? ["cloudflared", "tunnel", "run", "--token", this.token]
+      : ["cloudflared", "tunnel", "--url", this.localUrl];
+
+    const mode = this.token ? "named" : "quick";
+    console.log(`[tunnel] Starting cloudflared (${mode})...`);
 
     this.proc = spawn({
-      cmd: [
-        "cloudflared", "tunnel", "run",
-        "--token", this.token,
-      ],
+      cmd,
       stdout: "pipe",
       stderr: "pipe",
     });
 
-    // Monitor stderr for connection info
     this.monitorOutput();
 
-    // Auto-restart on exit
     this.proc.exited.then((code) => {
       if (this.stopped) return;
       console.log(`[tunnel] cloudflared exited with code ${code}, restarting in 5s...`);
@@ -50,10 +63,18 @@ export class TunnelManager {
         const { done, value } = await reader.read();
         if (done) break;
         const text = decoder.decode(value, { stream: true });
-        // Log connection events
         for (const line of text.split("\n")) {
           const trimmed = line.trim();
           if (!trimmed) continue;
+
+          // Capture quick tunnel URL
+          const urlMatch = trimmed.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
+          if (urlMatch && !this._publicUrl) {
+            this._publicUrl = urlMatch[0];
+            console.log(`[tunnel] Public URL: ${this._publicUrl}`);
+            this.urlResolve?.(this._publicUrl);
+          }
+
           if (trimmed.includes("Registered tunnel connection") ||
               trimmed.includes("error") ||
               trimmed.includes("failed")) {
@@ -76,14 +97,33 @@ export class TunnelManager {
 }
 
 /**
- * Start tunnel if CLOUDFLARE_TUNNEL_TOKEN is set.
- * Returns the manager or null.
+ * Start a tunnel if CLOUDFLARE_TUNNEL_TOKEN is set (named tunnel)
+ * or if no VIEW_BASE_URL is configured (quick tunnel as fallback).
+ * Returns [manager, publicUrl] or null if a static VIEW_BASE_URL is set.
  */
-export function startTunnelIfConfigured(): TunnelManager | null {
+export async function startTunnel(localUrl: string): Promise<{ manager: TunnelManager; publicUrl: string } | null> {
   const token = process.env.CLOUDFLARE_TUNNEL_TOKEN;
-  if (!token) return null;
+  const staticBase = process.env.VIEW_BASE_URL;
 
-  const manager = new TunnelManager(token);
+  // If a static base URL is explicitly set and no tunnel token, no tunnel needed
+  if (staticBase && !token) return null;
+
+  // If there's a token, use named tunnel; otherwise use quick tunnel
+  const manager = new TunnelManager({ token: token || undefined, localUrl });
   manager.start();
-  return manager;
+
+  if (token && staticBase) {
+    // Named tunnel with known URL — don't wait for discovery
+    return { manager, publicUrl: staticBase };
+  }
+
+  // Wait for the quick tunnel URL (with timeout)
+  const publicUrl = await Promise.race([
+    manager.publicUrl,
+    new Promise<string>((_, reject) =>
+      setTimeout(() => reject(new Error("Tunnel URL not received within 15s")), 15000)
+    ),
+  ]);
+
+  return { manager, publicUrl };
 }

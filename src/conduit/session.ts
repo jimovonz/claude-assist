@@ -98,6 +98,9 @@ export class SessionManager {
       "--output-format", "stream-json",
       "--verbose",
       "--include-partial-messages",
+      "--permission-mode", "bypassPermissions",
+      "--append-system-prompt",
+      "CRITICAL: You are running inside the claude-assist Conduit. NEVER run commands that stop, restart, or modify the Conduit service (systemctl, kill, pkill targeting claude-assist or this process). NEVER modify .env, systemd service files, or the claude-assist source code. You will kill yourself.",
     ];
 
     // Resume from persisted session if available

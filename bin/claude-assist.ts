@@ -1,10 +1,10 @@
 #!/usr/bin/env bun
 
-import { SessionManager, Router, TelegramChannel, closeDb } from "../src/conduit";
+import { SessionManager, Router, TelegramChannel, WebSocketChannel, closeDb } from "../src/conduit";
 import { ViewServer } from "../src/views/server";
 import { install, serviceCommand, statusCommand, logsCommand } from "../src/service/systemd";
 import { sdReady, sdStopping, startWatchdog } from "../src/service/watchdog";
-import { startTunnelIfConfigured } from "../src/service/tunnel";
+import { startTunnel } from "../src/service/tunnel";
 
 const command = process.argv[2];
 const subcommand = process.argv[3];
@@ -28,11 +28,25 @@ async function start() {
   // Set up session manager (loads persisted state from disk)
   const sessionManager = new SessionManager();
 
-  // Start view server with health provider
+  // Set up WebSocket channel for TUI clients
+  const wsChannel = new WebSocketChannel({
+    authToken: process.env.TUI_AUTH_TOKEN,
+    sessionManager,
+  });
+
+  // Start tunnel to get public URL before creating view server
+  const localUrl = `http://localhost:${env.viewPort}`;
+  const tunnel = await startTunnel(localUrl);
+  const baseUrl = tunnel?.publicUrl ?? env.viewBaseUrl;
+
+  console.log(`[conduit] View base URL: ${baseUrl}`);
+
+  // Start view server with health provider and WebSocket support
   const viewServer = new ViewServer({
     port: env.viewPort,
-    baseUrl: env.viewBaseUrl,
+    baseUrl,
     healthProvider: sessionManager,
+    wsChannel,
   });
   viewServer.start();
 
@@ -43,6 +57,7 @@ async function start() {
   });
 
   router.addChannel(telegram);
+  router.addChannel(wsChannel);
 
   // Prune idle sessions every 5 minutes
   setInterval(() => {
@@ -52,14 +67,11 @@ async function start() {
     }
   }, 5 * 60 * 1000);
 
-  // Start Cloudflare Tunnel if configured
-  const tunnel = startTunnelIfConfigured();
-
   // Graceful shutdown
   const shutdown = async () => {
     console.log("\n[conduit] Shutting down...");
     sdStopping();
-    tunnel?.stop();
+    tunnel?.manager.stop();
     await router.stop();
     viewServer.stop();
     closeDb();

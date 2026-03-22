@@ -4,19 +4,25 @@
   "description": "Personal AI assistant — multi-channel access to Claude Code",
   "type": "module",
   "bin": {
-    "claude-assist": "./bin/claude-assist.ts"
+    "claude-assist": "./bin/claude-assist.ts",
+    "claude-tui": "./bin/claude-tui.ts"
   },
   "scripts": {
     "start": "bun run bin/claude-assist.ts start",
-    "dev": "bun run --watch bin/claude-assist.ts start"
+    "dev": "bun run --watch bin/claude-assist.ts start",
+    "tui": "bun run bin/claude-tui.ts"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "@types/react": "^19.2.14"
   },
   "peerDependencies": {
     "typescript": "^5"
   },
   "dependencies": {
-    "grammy": "^1.41.1"
+    "grammy": "^1.41.1",
+    "ink": "^6.8.0",
+    "ink-text-input": "^6.0.0",
+    "react": "^19.2.4"
   }
 }

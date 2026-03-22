@@ -46,6 +46,7 @@ export interface Channel {
   replyWithView?(userId: string, summary: string, viewUrl: string): Promise<void>;
   sendTyping(userId: string): Promise<void>;
   sendStatus?(userId: string, text: string): Promise<void>;
+  sendStreamText?(userId: string, text: string): Promise<void>;
   start(onMessage: (userId: string, text: string) => void): Promise<void>;
   stop(): Promise<void>;
 }
@@ -154,13 +155,18 @@ export class Router {
             break;
 
           case "text":
-            // Show latest text preview (truncated)
-            const preview = event.text.length > 200
-              ? event.text.substring(0, 200) + "..."
-              : event.text;
-            if (preview !== lastPreview) {
-              lastPreview = preview;
-              await setStatus(`💬 ${preview}`);
+            if (channel.sendStreamText) {
+              const cleaned = stripMetadata(event.text);
+              if (cleaned) await channel.sendStreamText(userId, cleaned);
+            } else {
+              // Fallback: show truncated preview via status
+              const preview = event.text.length > 200
+                ? event.text.substring(0, 200) + "..."
+                : event.text;
+              if (preview !== lastPreview) {
+                lastPreview = preview;
+                await setStatus(`💬 ${preview}`);
+              }
             }
             break;
 
@@ -192,8 +198,13 @@ export class Router {
           touch();
           if (event.type === "status") await setStatus(event.text);
           if (event.type === "text") {
-            const p = event.text.length > 200 ? event.text.substring(0, 200) + "..." : event.text;
-            await setStatus(`💬 ${p}`);
+            if (channel.sendStreamText) {
+              const cleaned = stripMetadata(event.text);
+              if (cleaned) await channel.sendStreamText(userId, cleaned);
+            } else {
+              const p = event.text.length > 200 ? event.text.substring(0, 200) + "..." : event.text;
+              await setStatus(`💬 ${p}`);
+            }
           }
           if (event.type === "result") {
             response = event.text;
