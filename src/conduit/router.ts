@@ -140,6 +140,7 @@ export class Router {
       let response = "";
       let currentSessionId = "";
       let lastPreview = "";
+      let aborted = false;
 
       for await (const event of this.sessionManager.sendMessage(channelId, prompt, {
         channelId,
@@ -174,7 +175,17 @@ export class Router {
             response = event.text;
             currentSessionId = event.sessionId;
             break;
+
+          case "aborted":
+            aborted = true;
+            break;
         }
+      }
+
+      if (aborted) {
+        clearInterval(heartbeatInterval);
+        console.log(`[conduit] Processing aborted for ${channelId}`);
+        return;
       }
 
       // Post-message hook

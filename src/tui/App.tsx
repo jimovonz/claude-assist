@@ -14,6 +14,8 @@ interface AppProps {
 const COMMANDS: Record<string, string> = {
   "/clear": "Reset the Claude session (fresh conversation)",
   "/sessions": "List all active sessions",
+  "/incognito": "Toggle incognito mode (bash-like appearance)",
+  "/exit": "Quit the TUI",
   "/help": "Show available commands",
 };
 
@@ -24,8 +26,9 @@ export function App({ host, token }: AppProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [status, setStatus] = useState("");
   const [streaming, setStreaming] = useState(false);
+  const [incognito, setIncognito] = useState(false);
 
-  // Ctrl+C to exit, Ctrl+L to clear screen
+  // Ctrl+C to exit, Ctrl+L to clear screen, Escape to cancel
   useInput((input, key) => {
     if (key.ctrl && input === "c") {
       conn.disconnect();
@@ -34,6 +37,9 @@ export function App({ host, token }: AppProps) {
     if (key.ctrl && input === "l") {
       setMessages([]);
       setStatus("");
+    }
+    if (key.escape && streaming) {
+      conn.sendCancel();
     }
   });
 
@@ -82,6 +88,19 @@ export function App({ host, token }: AppProps) {
       ]);
     });
 
+    conn.on("cancelled", () => {
+      setStreaming(false);
+      setStatus("");
+      // Remove the incomplete streaming message
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (last?.role === "assistant" && last.streaming) {
+          return prev.slice(0, -1);
+        }
+        return prev;
+      });
+    });
+
     conn.on("command_ok", (msg: any) => {
       switch (msg.command) {
         case "clear":
@@ -124,6 +143,22 @@ export function App({ host, token }: AppProps) {
       if (connectionState !== "connected") return;
 
       // Handle local commands
+      if (text === "/exit") {
+        conn.disconnect();
+        exit();
+        return;
+      }
+
+      if (text === "/incognito") {
+        setIncognito((prev) => !prev);
+        if (!incognito) {
+          // Entering incognito — clear visible messages for clean slate
+          setMessages([]);
+          setStatus("");
+        }
+        return;
+      }
+
       if (text === "/help") {
         const helpLines = Object.entries(COMMANDS)
           .map(([cmd, desc]) => `${cmd} — ${desc}`)
@@ -131,7 +166,7 @@ export function App({ host, token }: AppProps) {
         setMessages((prev) => [
           ...prev,
           { role: "user", text, streaming: false },
-          { role: "assistant", text: helpLines + "\n\nCtrl+L — Clear screen\nCtrl+C — Quit", streaming: false },
+          { role: "assistant", text: helpLines + "\n\nEsc — Cancel current request\nCtrl+L — Clear screen\nCtrl+C — Quit", streaming: false },
         ]);
         return;
       }
@@ -154,16 +189,19 @@ export function App({ host, token }: AppProps) {
 
   return (
     <Box flexDirection="column" height="100%">
-      <Box marginBottom={1}>
-        <Text bold color="cyan">claude-assist TUI</Text>
-        <Text dimColor> — {host}</Text>
-      </Box>
+      {!incognito && (
+        <Box marginBottom={1}>
+          <Text bold color="cyan">claude-assist TUI</Text>
+          <Text dimColor> — {host}</Text>
+        </Box>
+      )}
 
-      <MessageList messages={messages} />
-      <StatusBar connectionState={connectionState} status={status} />
+      <MessageList messages={messages} incognito={incognito} />
+      {!incognito && <StatusBar connectionState={connectionState} status={status} />}
       <InputArea
         onSubmit={handleSubmit}
         disabled={connectionState !== "connected"}
+        incognito={incognito}
       />
     </Box>
   );

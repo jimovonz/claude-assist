@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { Box, Text, useInput } from "ink";
 import TextInput from "ink-text-input";
-import { join } from "path";
-import { homedir } from "os";
+import { join, basename } from "path";
+import { homedir, hostname, userInfo } from "os";
 import { readFileSync, writeFileSync, mkdirSync } from "fs";
 
 const HISTORY_FILE = join(
@@ -30,9 +30,19 @@ function saveHistory(history: string[]) {
 interface InputAreaProps {
   onSubmit: (text: string) => void;
   disabled?: boolean;
+  incognito?: boolean;
 }
 
-export function InputArea({ onSubmit, disabled }: InputAreaProps) {
+export function bashPrompt(): string {
+  const user = userInfo().username;
+  const host = hostname().split(".")[0];
+  const cwd = process.cwd();
+  const home = homedir();
+  const path = cwd.startsWith(home) ? "~" + cwd.slice(home.length) : cwd;
+  return `${user}@${host}.ai:${path}$`;
+}
+
+export function InputArea({ onSubmit, disabled, incognito }: InputAreaProps) {
   const [value, setValue] = useState("");
   const [history, setHistory] = useState<string[]>(() => loadHistory());
   const [historyIdx, setHistoryIdx] = useState(-1);
@@ -74,6 +84,21 @@ export function InputArea({ onSubmit, disabled }: InputAreaProps) {
     onSubmit(trimmed);
     setValue("");
   };
+
+  if (incognito) {
+    return (
+      <Box>
+        <Text color="green">{bashPrompt()}</Text>
+        <Text> </Text>
+        <TextInput
+          value={value}
+          onChange={setValue}
+          onSubmit={handleSubmit}
+          placeholder=""
+        />
+      </Box>
+    );
+  }
 
   return (
     <Box borderStyle="single" borderColor={disabled ? "gray" : "cyan"} paddingLeft={1}>

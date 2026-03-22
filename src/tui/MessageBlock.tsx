@@ -1,6 +1,7 @@
 import React from "react";
 import { Box, Text } from "ink";
 import { Markdown } from "./Markdown";
+import { bashPrompt } from "./InputArea";
 
 export interface Message {
   role: "user" | "assistant";
@@ -10,10 +11,25 @@ export interface Message {
 
 interface MessageBlockProps {
   message: Message;
+  incognito?: boolean;
 }
 
-export function MessageBlock({ message }: MessageBlockProps) {
+export function MessageBlock({ message, incognito }: MessageBlockProps) {
   const isUser = message.role === "user";
+
+  if (incognito) {
+    return (
+      <Box flexDirection="column">
+        {isUser ? (
+          <Text wrap="wrap">
+            <Text color="green">{bashPrompt()}</Text> {message.text}
+          </Text>
+        ) : (
+          <Markdown text={message.text} />
+        )}
+      </Box>
+    );
+  }
 
   return (
     <Box flexDirection="column" marginBottom={1}>

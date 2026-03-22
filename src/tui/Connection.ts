@@ -3,10 +3,11 @@ import { EventEmitter } from "events";
 export type ConnectionState = "disconnected" | "connecting" | "authenticating" | "connected";
 
 export interface ConduitMessage {
-  type: "auth_ok" | "auth_fail" | "status" | "text" | "result" | "error" | "ping";
+  type: "auth_ok" | "auth_fail" | "status" | "text" | "result" | "error" | "ping" | "cancelled";
   text?: string;
   reason?: string;
   userId?: string;
+  aborted?: boolean;
 }
 
 export class ConduitConnection extends EventEmitter {
@@ -76,6 +77,9 @@ export class ConduitConnection extends EventEmitter {
         case "error":
           this.emit("error", msg.text);
           break;
+        case "cancelled":
+          this.emit("cancelled", msg.aborted);
+          break;
         case "command_ok":
           this.emit("command_ok", msg);
           break;
@@ -105,6 +109,11 @@ export class ConduitConnection extends EventEmitter {
   sendCommand(command: string) {
     if (this._state !== "connected" || !this.ws) return;
     this.ws.send(JSON.stringify({ type: "command", command }));
+  }
+
+  sendCancel() {
+    if (this._state !== "connected" || !this.ws) return;
+    this.ws.send(JSON.stringify({ type: "cancel" }));
   }
 
   disconnect() {

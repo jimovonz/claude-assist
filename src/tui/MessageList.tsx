@@ -4,9 +4,10 @@ import { MessageBlock, type Message } from "./MessageBlock";
 
 interface MessageListProps {
   messages: Message[];
+  incognito?: boolean;
 }
 
-export function MessageList({ messages }: MessageListProps) {
+export function MessageList({ messages, incognito }: MessageListProps) {
   const { stdout } = useStdout();
   const [scrollOffset, setScrollOffset] = useState(0);
 
@@ -38,13 +39,13 @@ export function MessageList({ messages }: MessageListProps) {
 
   return (
     <Box flexDirection="column" flexGrow={1}>
-      {scrollOffset > 0 && (
+      {scrollOffset > 0 && !incognito && (
         <Text dimColor>-- {scrollOffset} more below (Shift+Down to scroll) --</Text>
       )}
       {visible.map((msg, i) => (
-        <MessageBlock key={startIdx + i} message={msg} />
+        <MessageBlock key={startIdx + i} message={msg} incognito={incognito} />
       ))}
-      {scrollOffset > 0 && (
+      {scrollOffset > 0 && !incognito && (
         <Text dimColor>-- scrolled up {scrollOffset} messages --</Text>
       )}
     </Box>

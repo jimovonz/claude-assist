@@ -8,7 +8,8 @@ const DEFAULT_CWD = join(homedir(), "Projects");
 export type SessionEvent =
   | { type: "status"; text: string }
   | { type: "text"; text: string }
-  | { type: "result"; text: string; sessionId: string };
+  | { type: "result"; text: string; sessionId: string }
+  | { type: "aborted" };
 
 export interface SessionOptions {
   channelId: string;
@@ -34,6 +35,7 @@ export interface SessionManagerConfig {
 export class SessionManager {
   private sessions = new Map<string, Session>();
   private persistedState = new Map<string, PersistedSession>();
+  private abortedChannels = new Set<string>();
   private idleTimeoutMs: number;
   private command: string;
   private startTime = Date.now();
@@ -177,8 +179,15 @@ export class SessionManager {
     while (true) {
       const { done, value } = await session.reader.read();
       if (done) {
-        console.log(`[session] Stream ended for ${channelId}`);
+        const wasAborted = this.abortedChannels.has(channelId);
+        this.abortedChannels.delete(channelId);
         this.sessions.delete(channelId);
+        if (wasAborted) {
+          console.log(`[session] Stream aborted for ${channelId}`);
+          yield { type: "aborted" };
+          return;
+        }
+        console.log(`[session] Stream ended for ${channelId}`);
         break;
       }
 
@@ -254,6 +263,17 @@ export class SessionManager {
     if (session) {
       session.proc.kill();
       this.sessions.delete(channelId);
+      return true;
+    }
+    return false;
+  }
+
+  abort(channelId: string): boolean {
+    const session = this.sessions.get(channelId);
+    if (session) {
+      this.abortedChannels.add(channelId);
+      session.proc.kill();
+      console.log(`[session] Aborted processing for ${channelId}`);
       return true;
     }
     return false;

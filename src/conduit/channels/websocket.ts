@@ -131,6 +131,15 @@ export class WebSocketChannel implements Channel {
       return;
     }
 
+    // Cancel current processing
+    if (msg.type === "cancel") {
+      const channelId = `${this.id}:${state.userId}`;
+      const aborted = this.sessionManager?.abort(channelId) ?? false;
+      ws.send(JSON.stringify({ type: "cancelled", aborted }));
+      console.log(`[tui] Cancel requested by ${state.userId}, aborted: ${aborted}`);
+      return;
+    }
+
     // Commands
     if (msg.type === "command") {
       this.handleCommand(ws, state, msg.command);
