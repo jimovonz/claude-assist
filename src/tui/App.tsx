@@ -1,10 +1,41 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Box, Text, useApp, useInput } from "ink";
 import { ConduitConnection, type ConnectionState } from "./Connection";
 import { MessageList } from "./MessageList";
 import { InputArea } from "./InputArea";
 import { StatusBar } from "./StatusBar";
 import type { Message } from "./MessageBlock";
+import { join } from "path";
+import { homedir } from "os";
+import { readFileSync, writeFileSync, mkdirSync } from "fs";
+
+const STATE_DIR = process.env.CONDUIT_STATE_DIR ?? join(homedir(), ".local", "state", "claude-assist");
+
+function loadMessages(userId: string): Message[] {
+  try {
+    const file = join(STATE_DIR, `tui-messages-${userId}.json`);
+    const data = JSON.parse(readFileSync(file, "utf-8"));
+    return (data as Message[]).map((m) => ({ ...m, streaming: false }));
+  } catch {
+    return [];
+  }
+}
+
+function saveMessages(userId: string, messages: Message[]) {
+  try {
+    mkdirSync(STATE_DIR, { recursive: true });
+    const file = join(STATE_DIR, `tui-messages-${userId}.json`);
+    const toSave = messages.filter((m) => !m.streaming);
+    writeFileSync(file, JSON.stringify(toSave));
+  } catch {}
+}
+
+function clearMessages(userId: string) {
+  try {
+    const file = join(STATE_DIR, `tui-messages-${userId}.json`);
+    writeFileSync(file, "[]");
+  } catch {}
+}
 
 interface AppProps {
   host: string;
@@ -23,10 +54,22 @@ export function App({ host, token }: AppProps) {
   const { exit } = useApp();
   const [conn] = useState(() => new ConduitConnection(host, token));
   const [connectionState, setConnectionState] = useState<ConnectionState>("disconnected");
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>(() => loadMessages(conn.userId));
   const [status, setStatus] = useState("");
   const [streaming, setStreaming] = useState(false);
+  const [pending, setPending] = useState(false); // between send and first text chunk
   const [incognito, setIncognito] = useState(false);
+
+  // Persist messages when they change (skip during streaming)
+  const prevMsgsRef = useRef(messages);
+  useEffect(() => {
+    if (messages !== prevMsgsRef.current) {
+      prevMsgsRef.current = messages;
+      if (!messages.some((m) => m.streaming)) {
+        saveMessages(conn.userId, messages);
+      }
+    }
+  }, [messages]);
 
   // Ctrl+C to exit, Ctrl+L to clear screen, Escape to cancel
   useInput((input, key) => {
@@ -38,7 +81,7 @@ export function App({ host, token }: AppProps) {
       setMessages([]);
       setStatus("");
     }
-    if (key.escape && streaming) {
+    if (key.escape && (streaming || pending)) {
       conn.sendCancel();
     }
   });
@@ -57,6 +100,7 @@ export function App({ host, token }: AppProps) {
     });
 
     conn.on("text", (text: string) => {
+      setPending(false);
       setStreaming(true);
       setMessages((prev) => {
         const last = prev[prev.length - 1];
@@ -68,6 +112,7 @@ export function App({ host, token }: AppProps) {
     });
 
     conn.on("result", (text: string) => {
+      setPending(false);
       setStreaming(false);
       setStatus("");
       setMessages((prev) => {
@@ -80,6 +125,7 @@ export function App({ host, token }: AppProps) {
     });
 
     conn.on("error", (text: string) => {
+      setPending(false);
       setStreaming(false);
       setStatus("");
       setMessages((prev) => [
@@ -89,6 +135,7 @@ export function App({ host, token }: AppProps) {
     });
 
     conn.on("cancelled", () => {
+      setPending(false);
       setStreaming(false);
       setStatus("");
       // Remove the incomplete streaming message
@@ -179,12 +226,13 @@ export function App({ host, token }: AppProps) {
       }
 
       // Regular message
-      if (streaming) return;
+      if (streaming || pending) return;
       setMessages((prev) => [...prev, { role: "user", text, streaming: false }]);
+      setPending(true);
       setStatus("Sending...");
       conn.send(text);
     },
-    [conn, connectionState, streaming]
+    [conn, connectionState, streaming, pending]
   );
 
   return (
@@ -202,6 +250,7 @@ export function App({ host, token }: AppProps) {
         onSubmit={handleSubmit}
         disabled={connectionState !== "connected"}
         incognito={incognito}
+        streaming={streaming || pending}
       />
     </Box>
   );

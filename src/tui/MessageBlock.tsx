@@ -22,7 +22,7 @@ export function MessageBlock({ message, incognito }: MessageBlockProps) {
       <Box flexDirection="column">
         {isUser ? (
           <Text wrap="wrap">
-            <Text color="green">{bashPrompt()}</Text> {message.text}
+            <Text color="green">{bashPrompt()}$ </Text>{message.text}
           </Text>
         ) : (
           <Markdown text={message.text} />

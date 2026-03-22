@@ -1,4 +1,8 @@
 import { EventEmitter } from "events";
+import { join } from "path";
+import { homedir } from "os";
+import { readFileSync, writeFileSync, mkdirSync } from "fs";
+import { randomBytes } from "crypto";
 
 export type ConnectionState = "disconnected" | "connecting" | "authenticating" | "connected";
 
@@ -10,6 +14,22 @@ export interface ConduitMessage {
   aborted?: boolean;
 }
 
+const STATE_DIR = process.env.CONDUIT_STATE_DIR ?? join(homedir(), ".local", "state", "claude-assist");
+const USER_ID_FILE = join(STATE_DIR, "tui-user-id");
+
+function getOrCreateUserId(): string {
+  try {
+    const id = readFileSync(USER_ID_FILE, "utf-8").trim();
+    if (id) return id;
+  } catch {}
+  const id = `tui-${randomBytes(8).toString("hex")}`;
+  try {
+    mkdirSync(STATE_DIR, { recursive: true });
+    writeFileSync(USER_ID_FILE, id);
+  } catch {}
+  return id;
+}
+
 export class ConduitConnection extends EventEmitter {
   private ws: WebSocket | null = null;
   private _state: ConnectionState = "disconnected";
@@ -18,11 +38,13 @@ export class ConduitConnection extends EventEmitter {
   private shouldReconnect = true;
   private reconnectAttempts = 0;
   private reconnectTimer: Timer | null = null;
+  readonly userId: string;
 
   constructor(url: string, token: string) {
     super();
     this.url = url;
     this.token = token;
+    this.userId = getOrCreateUserId();
   }
 
   get state(): ConnectionState {
@@ -43,7 +65,7 @@ export class ConduitConnection extends EventEmitter {
       this.reconnectAttempts = 0;
       this._state = "authenticating";
       this.emit("state", this._state);
-      this.ws!.send(JSON.stringify({ type: "auth", token: this.token }));
+      this.ws!.send(JSON.stringify({ type: "auth", token: this.token, userId: this.userId }));
     };
 
     this.ws.onmessage = (event) => {

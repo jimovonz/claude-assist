@@ -112,7 +112,15 @@ export class WebSocketChannel implements Channel {
 
       if (msg.token === this.authToken) {
         state.authenticated = true;
-        state.userId = `tui-${randomBytes(4).toString("hex")}`;
+        // Use client-provided userId for session persistence, fallback to random
+        state.userId = (typeof msg.userId === "string" && msg.userId)
+          ? msg.userId
+          : `tui-${randomBytes(4).toString("hex")}`;
+        // Close any existing socket for this userId (reconnect replaces old connection)
+        const existing = this.userSockets.get(state.userId);
+        if (existing && existing !== ws) {
+          existing.close(4002, "Replaced by new connection");
+        }
         this.userSockets.set(state.userId, ws);
         ws.send(JSON.stringify({ type: "auth_ok", userId: state.userId }));
         console.log(`[tui] Client authenticated: ${state.userId}`);
