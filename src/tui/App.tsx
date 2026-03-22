@@ -71,7 +71,7 @@ export function App({ host, token }: AppProps) {
     }
   }, [messages]);
 
-  // Ctrl+C to exit, Ctrl+L to clear screen, Escape to cancel
+  // Ctrl+C to exit, Ctrl+L to clear screen, Escape/Ctrl+X to cancel
   useInput((input, key) => {
     if (key.ctrl && input === "c") {
       conn.disconnect();
@@ -81,7 +81,7 @@ export function App({ host, token }: AppProps) {
       setMessages([]);
       setStatus("");
     }
-    if (key.escape && (streaming || pending)) {
+    if ((key.escape || (key.ctrl && input === "x")) && (streaming || pending)) {
       conn.sendCancel();
     }
   });
@@ -213,7 +213,7 @@ export function App({ host, token }: AppProps) {
         setMessages((prev) => [
           ...prev,
           { role: "user", text, streaming: false },
-          { role: "assistant", text: helpLines + "\n\nEsc — Cancel current request\nCtrl+L — Clear screen\nCtrl+C — Quit", streaming: false },
+          { role: "assistant", text: helpLines + "\n\nEsc / Ctrl+X — Cancel current request\nCtrl+L — Clear screen\nCtrl+C — Quit", streaming: false },
         ]);
         return;
       }

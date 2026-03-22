@@ -21,12 +21,16 @@ function getOrCreateUserId(): string {
   try {
     const id = readFileSync(USER_ID_FILE, "utf-8").trim();
     if (id) return id;
-  } catch {}
+  } catch {
+    // File doesn't exist yet — will create below
+  }
   const id = `tui-${randomBytes(8).toString("hex")}`;
   try {
     mkdirSync(STATE_DIR, { recursive: true });
     writeFileSync(USER_ID_FILE, id);
-  } catch {}
+  } catch (err) {
+    console.error(`[tui] Failed to persist userId to ${USER_ID_FILE}:`, err);
+  }
   return id;
 }
 

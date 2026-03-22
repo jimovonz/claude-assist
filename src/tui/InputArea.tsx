@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Box, Text, useInput, useStdout } from "ink";
-import { join, basename } from "path";
+import { join } from "path";
 import { homedir, hostname, userInfo } from "os";
 import { readFileSync, writeFileSync, mkdirSync } from "fs";
 
@@ -40,10 +40,8 @@ export function bashPrompt(): string {
 }
 
 /**
- * Custom text input that prevents wrapping by showing only the tail
- * of the input that fits within the available terminal width.
- * This avoids the ink-text-input v6 wrapping bug where Ink
- * miscalculates output height on re-render.
+ * Custom text input with word-wrapping across multiple lines.
+ * Uses a fixed height approach to avoid Ink's height miscalculation on re-render.
  */
 function LineInput({
   value,
@@ -124,45 +122,41 @@ function LineInput({
     if (newCur !== cur) setCursor(newCur);
   });
 
-  // Render: show only what fits in availableWidth
-  // Reserve 1 char for the cursor block
-  const maxChars = Math.max(1, availableWidth - 1);
-
   if (value.length === 0 && placeholder) {
     return <Text dimColor>{placeholder}</Text>;
   }
 
-  // Determine visible window around cursor
-  let visibleStart: number;
-  let visibleEnd: number;
+  const width = Math.max(1, availableWidth);
 
-  if (value.length <= maxChars) {
-    // Everything fits
-    visibleStart = 0;
-    visibleEnd = value.length;
-  } else {
-    // Scroll to keep cursor visible
-    // Try to show text ending at cursor position
-    visibleEnd = Math.min(value.length, cursor + Math.floor(maxChars / 4));
-    visibleStart = Math.max(0, visibleEnd - maxChars);
-    // Ensure cursor is visible
-    if (cursor < visibleStart) {
-      visibleStart = cursor;
-      visibleEnd = Math.min(value.length, visibleStart + maxChars);
-    }
+  // Wrap text into lines of `width` characters
+  const lines: string[] = [];
+  for (let i = 0; i < value.length; i += width) {
+    lines.push(value.slice(i, i + width));
   }
+  if (lines.length === 0) lines.push("");
 
-  const before = value.slice(visibleStart, cursor);
-  const cursorChar = cursor < value.length ? value[cursor] : " ";
-  const after = value.slice(cursor + 1, visibleEnd);
+  // Find which line the cursor is on
+  const cursorLine = Math.floor(cursor / width);
+  const cursorCol = cursor % width;
 
   return (
-    <Text>
-      {visibleStart > 0 ? <Text dimColor>{"…"}</Text> : null}
-      <Text>{visibleStart > 0 ? before.slice(1) : before}</Text>
-      <Text inverse>{cursorChar}</Text>
-      <Text>{after}</Text>
-    </Text>
+    <Box flexDirection="column">
+      {lines.map((line, i) => {
+        if (i === cursorLine) {
+          const before = line.slice(0, cursorCol);
+          const cursorChar = cursorCol < line.length ? line[cursorCol] : " ";
+          const after = line.slice(cursorCol + 1);
+          return (
+            <Text key={i}>
+              {before}
+              <Text inverse>{cursorChar}</Text>
+              {after}
+            </Text>
+          );
+        }
+        return <Text key={i}>{line}</Text>;
+      })}
+    </Box>
   );
 }
 
@@ -233,7 +227,7 @@ export function InputArea({ onSubmit, disabled, incognito, streaming }: InputAre
   const availableWidth = columns - normalOverhead;
 
   return (
-    <Box borderStyle="single" borderColor={disabled ? "gray" : "cyan"} paddingLeft={1}>
+    <Box borderStyle="single" borderColor={disabled ? "gray" : "cyan"} paddingLeft={1} flexDirection="row" alignItems="flex-start">
       <Text bold color="cyan">&gt; </Text>
       <LineInput
         value={value}
