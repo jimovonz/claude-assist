@@ -7,7 +7,7 @@ import { randomBytes } from "crypto";
 export type ConnectionState = "disconnected" | "connecting" | "authenticating" | "connected";
 
 export interface ConduitMessage {
-  type: "auth_ok" | "auth_fail" | "status" | "text" | "result" | "error" | "ping" | "cancelled";
+  type: "auth_ok" | "auth_fail" | "status" | "text" | "text_end" | "result" | "error" | "ping" | "cancelled";
   text?: string;
   reason?: string;
   userId?: string;
@@ -96,6 +96,9 @@ export class ConduitConnection extends EventEmitter {
           break;
         case "text":
           this.emit("text", msg.text);
+          break;
+        case "text_end":
+          this.emit("text_end");
           break;
         case "result":
           this.emit("result", msg.text);

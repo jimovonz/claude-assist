@@ -7,7 +7,7 @@ interface MessageListProps {
   incognito?: boolean;
 }
 
-export function MessageList({ messages, incognito }: MessageListProps) {
+export const MessageList = React.memo(function MessageList({ messages, incognito }: MessageListProps) {
   const { stdout } = useStdout();
   const [scrollOffset, setScrollOffset] = useState(0);
 
@@ -50,4 +50,4 @@ export function MessageList({ messages, incognito }: MessageListProps) {
       )}
     </Box>
   );
-}
+});

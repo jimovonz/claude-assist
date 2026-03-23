@@ -25,6 +25,7 @@ export interface Session {
   reader: ReadableStreamDefaultReader<Uint8Array>;
   buffer: string;
   lastActivity: number;
+  wasAborted?: boolean;
 }
 
 export interface SessionManagerConfig {

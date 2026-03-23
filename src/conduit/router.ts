@@ -47,6 +47,8 @@ export interface Channel {
   sendTyping(userId: string): Promise<void>;
   sendStatus?(userId: string, text: string): Promise<void>;
   sendStreamText?(userId: string, text: string): Promise<void>;
+  sendStreamEnd?(userId: string): Promise<void>;
+  consumeReconnect?(userId: string): boolean;
   start(onMessage: (userId: string, text: string) => void): Promise<void>;
   stop(): Promise<void>;
 }
@@ -126,10 +128,25 @@ export class Router {
       const cairnContext = await runPromptHook(sessionId, text);
 
       let prompt = text;
+
+      // Inject reconnection context so Claude knows the client reconnected
+      const reconnected = channel.consumeReconnect?.(userId);
+      if (reconnected) {
+        prompt = `[${channel.name} session restored — client reconnected. Briefly summarise what we were doing before continuing.]\n\n${prompt}`;
+        console.log(`[conduit] Injected reconnect notice for ${channel.name}:${userId}`);
+      }
+
+      // Inject abort context so Claude knows the previous request was cancelled
+      if (existing?.wasAborted) {
+        prompt = `[User cancelled the previous request (Escape).]\n\n${prompt}`;
+        existing.wasAborted = false;
+        console.log(`[conduit] Injected abort notice for ${channelId}`);
+      }
+
       if (cairnContext) {
         await setStatus("📡 Found relevant context");
         touch();
-        prompt = `${cairnContext}\n\n${text}`;
+        prompt = `${cairnContext}\n\n${prompt}`;
         console.log(`[conduit] Injected Cairn context (${cairnContext.length} chars)`);
       }
 
@@ -141,6 +158,7 @@ export class Router {
       let currentSessionId = "";
       let lastPreview = "";
       let aborted = false;
+      let hasUnfinalizedText = false;
 
       for await (const event of this.sessionManager.sendMessage(channelId, prompt, {
         channelId,
@@ -151,6 +169,11 @@ export class Router {
 
         switch (event.type) {
           case "status":
+            // Finalize previous text block before tool call starts
+            if (hasUnfinalizedText && channel.sendStreamEnd) {
+              await channel.sendStreamEnd(userId);
+              hasUnfinalizedText = false;
+            }
             await setStatus(event.text);
             console.log(`[conduit] ${event.text}`);
             break;
@@ -158,7 +181,10 @@ export class Router {
           case "text":
             if (channel.sendStreamText) {
               const cleaned = stripMetadata(event.text);
-              if (cleaned) await channel.sendStreamText(userId, cleaned);
+              if (cleaned) {
+                await channel.sendStreamText(userId, cleaned);
+                hasUnfinalizedText = true;
+              }
             } else {
               // Fallback: show truncated preview via status
               const preview = event.text.length > 200
@@ -184,31 +210,52 @@ export class Router {
 
       if (aborted) {
         clearInterval(heartbeatInterval);
+        if (existing) existing.wasAborted = true;
         console.log(`[conduit] Processing aborted for ${channelId}`);
         return;
       }
 
-      // Post-message hook
+      // Send result to client immediately so the prompt is available
+      clearInterval(heartbeatInterval);
+      const cleaned = stripMetadata(response);
+      console.log(`[conduit] Response (${cleaned.length} chars), session: ${currentSessionId}`);
+
+      if (!cleaned) {
+        await channel.reply(userId, "No response generated.");
+        return;
+      }
+
+      if (this.viewServer && channel.replyWithView && shouldCreateView(cleaned)) {
+        const summary = summarize(cleaned);
+        const token = createView({ content: cleaned });
+        const viewUrl = this.viewServer.getViewUrl(token);
+        console.log(`[conduit] Created view: ${viewUrl}`);
+        await channel.replyWithView(userId, summary, viewUrl);
+      } else {
+        await channel.reply(userId, cleaned);
+      }
+
+      // Post-message hook (runs after result is sent — no delay for user)
       let stopResult = { block: false, reason: undefined as string | undefined };
       if (response.length > 0) {
-        await setStatus("🪨 Storing to memory...");
-        touch();
         stopResult = await runStopHook(currentSessionId, response, DEFAULT_CWD);
       }
 
       if (stopResult.block && stopResult.reason) {
-        await setStatus("🪨 Following the cairn...");
-        touch();
-        console.log(`[conduit] Stop hook blocked — re-prompting with context`);
+        const isContextRetrieval = stopResult.reason.startsWith("CAIRN CONTEXT:");
+        console.log(`[conduit] Stop hook blocked — ${isContextRetrieval ? "context retrieval" : "enforcement"}`);
 
         for await (const event of this.sessionManager.sendMessage(
           channelId,
-          `The following context was retrieved from the Cairn memory system in response to your context: insufficient declaration. Use this context to answer the user's original question.\n\n${stopResult.reason}\n\nNow please answer the user's original question using this context.`,
+          isContextRetrieval
+            ? `The following context was retrieved from the Cairn memory system in response to your context: insufficient declaration. Use this context to answer the user's original question.\n\n${stopResult.reason}\n\nNow please answer the user's original question using this context.`
+            : stopResult.reason,
           { channelId }
         )) {
           touch();
           if (event.type === "status") await setStatus(event.text);
-          if (event.type === "text") {
+          // Only stream to client for context retrieval (user-facing responses)
+          if (isContextRetrieval && event.type === "text") {
             if (channel.sendStreamText) {
               const cleaned = stripMetadata(event.text);
               if (cleaned) await channel.sendStreamText(userId, cleaned);
@@ -223,28 +270,15 @@ export class Router {
           }
         }
 
+        // Only send re-prompt result for context retrieval
+        if (isContextRetrieval) {
+          const repromptCleaned = stripMetadata(response);
+          if (repromptCleaned) {
+            await channel.reply(userId, repromptCleaned);
+          }
+        }
+
         await runStopHook(currentSessionId, response, DEFAULT_CWD, true);
-      }
-
-      clearInterval(heartbeatInterval);
-
-      const cleaned = stripMetadata(response);
-      console.log(`[conduit] Response (${cleaned.length} chars), session: ${currentSessionId}`);
-
-      if (!cleaned) {
-        await channel.reply(userId, "No response generated.");
-        return;
-      }
-
-      // Final reply — bypass status queue, deliver immediately
-      if (this.viewServer && channel.replyWithView && shouldCreateView(cleaned)) {
-        const summary = summarize(cleaned);
-        const token = createView({ content: cleaned });
-        const viewUrl = this.viewServer.getViewUrl(token);
-        console.log(`[conduit] Created view: ${viewUrl}`);
-        await channel.replyWithView(userId, summary, viewUrl);
-      } else {
-        await channel.reply(userId, cleaned);
       }
     } catch (err) {
       clearInterval(heartbeatInterval);

@@ -14,7 +14,7 @@ interface MessageBlockProps {
   incognito?: boolean;
 }
 
-export function MessageBlock({ message, incognito }: MessageBlockProps) {
+export const MessageBlock = React.memo(function MessageBlock({ message, incognito }: MessageBlockProps) {
   const isUser = message.role === "user";
 
   if (incognito) {
@@ -46,4 +46,4 @@ export function MessageBlock({ message, incognito }: MessageBlockProps) {
       </Box>
     </Box>
   );
-}
+});

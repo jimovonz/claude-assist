@@ -31,6 +31,7 @@ interface InputAreaProps {
   disabled?: boolean;
   incognito?: boolean;
   streaming?: boolean;
+  status?: string;
 }
 
 export function bashPrompt(): string {
@@ -92,9 +93,23 @@ function LineInput({
         newCur = cur - 1;
       }
     } else if (key.leftArrow) {
-      newCur = Math.max(0, cur - 1);
+      if (key.ctrl || key.meta) {
+        // Word jump left: skip to start of previous word
+        const before = val.slice(0, cur);
+        const match = before.match(/(?:^|\s)\S*$/);
+        newCur = match ? cur - match[0].length : 0;
+      } else {
+        newCur = Math.max(0, cur - 1);
+      }
     } else if (key.rightArrow) {
-      newCur = Math.min(val.length, cur + 1);
+      if (key.ctrl || key.meta) {
+        // Word jump right: skip to end of next word
+        const after = val.slice(cur);
+        const match = after.match(/^\S*\s?/);
+        newCur = match ? cur + match[0].length : val.length;
+      } else {
+        newCur = Math.min(val.length, cur + 1);
+      }
     } else if (key.ctrl && input === "a") {
       newCur = 0;
     } else if (key.ctrl && input === "e") {
@@ -160,7 +175,7 @@ function LineInput({
   );
 }
 
-export function InputArea({ onSubmit, disabled, incognito, streaming }: InputAreaProps) {
+export function InputArea({ onSubmit, disabled, incognito, streaming, status }: InputAreaProps) {
   const [value, setValue] = useState("");
   const [history, setHistory] = useState<string[]>(() => loadHistory());
   const [historyIdx, setHistoryIdx] = useState(-1);
@@ -205,7 +220,9 @@ export function InputArea({ onSubmit, disabled, incognito, streaming }: InputAre
   };
 
   if (incognito) {
-    if (streaming) return null;
+    if (streaming) {
+      return status ? <Text dimColor>  {status}</Text> : null;
+    }
     const prompt = `${bashPrompt()}$ `;
     const availableWidth = columns - prompt.length;
     return (

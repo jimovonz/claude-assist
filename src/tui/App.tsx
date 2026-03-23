@@ -111,6 +111,16 @@ export function App({ host, token }: AppProps) {
       });
     });
 
+    conn.on("text_end", () => {
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (last?.role === "assistant" && last.streaming) {
+          return [...prev.slice(0, -1), { ...last, streaming: false }];
+        }
+        return prev;
+      });
+    });
+
     conn.on("result", (text: string) => {
       setPending(false);
       setStreaming(false);
@@ -251,6 +261,7 @@ export function App({ host, token }: AppProps) {
         disabled={connectionState !== "connected"}
         incognito={incognito}
         streaming={streaming || pending}
+        status={status}
       />
     </Box>
   );
