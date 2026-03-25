@@ -62,7 +62,9 @@ export class ConduitConnection extends EventEmitter {
     this._state = "connecting";
     this.emit("state", this._state);
 
-    const wsUrl = this.url.replace(/^http/, "ws") + "/ws";
+    // Use /ws/tui for edge servers, /ws for direct conduit connection
+    const wsPath = this.url.includes("localhost") || this.url.includes("127.0.0.1") ? "/ws" : "/ws/tui";
+    const wsUrl = this.url.replace(/^http/, "ws") + wsPath;
     this.ws = new WebSocket(wsUrl);
 
     this.ws.onopen = () => {
