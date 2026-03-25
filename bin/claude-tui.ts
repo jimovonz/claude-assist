@@ -31,7 +31,7 @@ Environment:
   process.exit(0);
 }
 
-const host = getArg("--host") ?? process.env.CONDUIT_HOST ?? "http://localhost:8099";
+const host = getArg("--host") ?? process.env.CONDUIT_HOST ?? "http://conduit.alimento.co.nz";
 const token = getArg("--token") ?? process.env.CONDUIT_TOKEN ?? process.env.TUI_AUTH_TOKEN ?? "";
 
 render(React.createElement(App, { host, token }));
