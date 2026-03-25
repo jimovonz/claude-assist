@@ -1,6 +1,6 @@
 import { SessionManager, type SessionEvent } from "./session";
 import { runStopHook, runPromptHook } from "./hooks";
-import { createView, shouldCreateView } from "../views/renderer";
+import { createViewAsync, shouldCreateView, EDGE_URL } from "../views/renderer";
 import type { ViewServer } from "../views/server";
 import { homedir } from "os";
 import { join } from "path";
@@ -48,7 +48,7 @@ export interface Channel {
   sendStatus?(userId: string, text: string): Promise<void>;
   sendStreamText?(userId: string, text: string): Promise<void>;
   sendStreamEnd?(userId: string): Promise<void>;
-  consumeReconnect?(userId: string): boolean;
+  clearStatus?(userId: string): Promise<void>;
   start(onMessage: (userId: string, text: string) => void): Promise<void>;
   stop(): Promise<void>;
 }
@@ -123,18 +123,10 @@ export class Router {
 
     try {
       // Pre-message hook
-      await setStatus("🔍 Searching memory...");
       touch();
       const cairnContext = await runPromptHook(sessionId, text);
 
       let prompt = text;
-
-      // Inject reconnection context so Claude knows the client reconnected
-      const reconnected = channel.consumeReconnect?.(userId);
-      if (reconnected) {
-        prompt = `[${channel.name} session restored — client reconnected. Briefly summarise what we were doing before continuing.]\n\n${prompt}`;
-        console.log(`[conduit] Injected reconnect notice for ${channel.name}:${userId}`);
-      }
 
       // Inject abort context so Claude knows the previous request was cancelled
       if (existing?.wasAborted) {
@@ -185,16 +177,9 @@ export class Router {
                 await channel.sendStreamText(userId, cleaned);
                 hasUnfinalizedText = true;
               }
-            } else {
-              // Fallback: show truncated preview via status
-              const preview = event.text.length > 200
-                ? event.text.substring(0, 200) + "..."
-                : event.text;
-              if (preview !== lastPreview) {
-                lastPreview = preview;
-                await setStatus(`💬 ${preview}`);
-              }
             }
+            // Channels without sendStreamText (e.g. Telegram) just ignore
+            // text events — status updates cover tool/thinking progress
             break;
 
           case "result":
@@ -221,14 +206,15 @@ export class Router {
       console.log(`[conduit] Response (${cleaned.length} chars), session: ${currentSessionId}`);
 
       if (!cleaned) {
-        await channel.reply(userId, "No response generated.");
+        console.log(`[conduit] Empty response after stripping — suppressing`);
+        if (channel.clearStatus) await channel.clearStatus(userId);
         return;
       }
 
       if (this.viewServer && channel.replyWithView && shouldCreateView(cleaned)) {
         const summary = summarize(cleaned);
-        const token = createView({ content: cleaned });
-        const viewUrl = this.viewServer.getViewUrl(token);
+        const { token, url: edgeUrl } = await createViewAsync({ content: cleaned });
+        const viewUrl = edgeUrl ?? this.viewServer.getViewUrl(token);
         console.log(`[conduit] Created view: ${viewUrl}`);
         await channel.replyWithView(userId, summary, viewUrl);
       } else {
@@ -259,9 +245,6 @@ export class Router {
             if (channel.sendStreamText) {
               const cleaned = stripMetadata(event.text);
               if (cleaned) await channel.sendStreamText(userId, cleaned);
-            } else {
-              const p = event.text.length > 200 ? event.text.substring(0, 200) + "..." : event.text;
-              await setStatus(`💬 ${p}`);
             }
           }
           if (event.type === "result") {

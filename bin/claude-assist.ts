@@ -5,6 +5,7 @@ import { ViewServer } from "../src/views/server";
 import { install, serviceCommand, statusCommand, logsCommand } from "../src/service/systemd";
 import { sdReady, sdStopping, startWatchdog } from "../src/service/watchdog";
 import { startTunnel } from "../src/service/tunnel";
+import { EdgeRelay } from "../src/service/edge-relay";
 
 const command = process.argv[2];
 const subcommand = process.argv[3];
@@ -34,10 +35,13 @@ async function start() {
     sessionManager,
   });
 
-  // Start tunnel to get public URL before creating view server
+  // Start tunnel for local TUI access (always, unless explicitly disabled)
   const localUrl = `http://localhost:${env.viewPort}`;
   const tunnel = await startTunnel(localUrl);
-  const baseUrl = tunnel?.publicUrl ?? env.viewBaseUrl;
+  const edgeUrl = process.env.EDGE_URL;
+  // Edge URL takes priority for view links (stable), tunnel is fallback
+  const baseUrl = edgeUrl ?? tunnel?.publicUrl ?? env.viewBaseUrl;
+  if (edgeUrl) console.log(`[conduit] Edge server: ${edgeUrl}`);
 
   console.log(`[conduit] View base URL: ${baseUrl}`);
 
@@ -54,10 +58,22 @@ async function start() {
 
   const telegram = new TelegramChannel({
     botToken: env.telegramToken,
+    sessionManager,
   });
 
   router.addChannel(telegram);
   router.addChannel(wsChannel);
+
+  // Edge relay for remote TUI access via GCE
+  let edgeRelay: EdgeRelay | null = null;
+  if (edgeUrl) {
+    edgeRelay = new EdgeRelay({
+      edgeUrl,
+      apiSecret: process.env.EDGE_API_SECRET,
+      sessionManager,
+    });
+    router.addChannel(edgeRelay);
+  }
 
   // Prune idle sessions every 5 minutes
   setInterval(() => {
@@ -72,6 +88,7 @@ async function start() {
     console.log("\n[conduit] Shutting down...");
     sdStopping();
     tunnel?.manager.stop();
+    if (edgeRelay) await edgeRelay.stop();
     await router.stop();
     viewServer.stop();
     closeDb();

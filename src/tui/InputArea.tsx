@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from "react";
-import { Box, Text, useInput, useStdout } from "ink";
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { Box, Text, useStdout } from "ink";
 import { join } from "path";
 import { homedir, hostname, userInfo } from "os";
 import { readFileSync, writeFileSync, mkdirSync } from "fs";
@@ -32,6 +32,7 @@ interface InputAreaProps {
   incognito?: boolean;
   streaming?: boolean;
   status?: string;
+  onKeyRef?: React.MutableRefObject<((input: string, key: any) => void) | undefined>;
 }
 
 export function bashPrompt(): string {
@@ -41,48 +42,142 @@ export function bashPrompt(): string {
 }
 
 /**
- * Custom text input with word-wrapping across multiple lines.
- * Uses a fixed height approach to avoid Ink's height miscalculation on re-render.
+ * Pure display component — no useInput. Cursor managed by parent.
  */
 function LineInput({
   value,
-  onChange,
-  onSubmit,
+  cursor,
   placeholder,
-  prefix,
   availableWidth,
 }: {
   value: string;
-  onChange: (v: string) => void;
-  onSubmit: (v: string) => void;
+  cursor: number;
   placeholder?: string;
-  prefix?: string;
   availableWidth: number;
 }) {
-  const [cursor, setCursor] = useState(value.length);
-  // Refs to avoid stale closures in useInput — keystrokes can arrive
-  // faster than React re-renders, so we read/write refs for the latest state.
+  if (value.length === 0 && placeholder) {
+    return <Text dimColor>{placeholder}</Text>;
+  }
+
+  const width = Math.max(1, availableWidth);
+
+  const lines: string[] = [];
+  for (let i = 0; i < value.length; i += width) {
+    lines.push(value.slice(i, i + width));
+  }
+  if (lines.length === 0) lines.push("");
+
+  const cursorLine = Math.floor(cursor / width);
+  const cursorCol = cursor % width;
+
+  return (
+    <Box flexDirection="column">
+      {lines.map((line, i) => {
+        if (i === cursorLine) {
+          const before = line.slice(0, cursorCol);
+          const cursorChar = cursorCol < line.length ? line[cursorCol] : " ";
+          const after = line.slice(cursorCol + 1);
+          return (
+            <Text key={i}>
+              {before}
+              <Text inverse>{cursorChar}</Text>
+              {after}
+            </Text>
+          );
+        }
+        return <Text key={i}>{line}</Text>;
+      })}
+    </Box>
+  );
+}
+
+export function InputArea({ onSubmit, disabled, incognito, streaming, status, onKeyRef }: InputAreaProps) {
+  const [value, setValue] = useState("");
+  const [cursor, setCursor] = useState(0);
+  const [history, setHistory] = useState<string[]>(() => loadHistory());
+  const [historyIdx, setHistoryIdx] = useState(-1);
+  const [savedInput, setSavedInput] = useState("");
+  const { stdout } = useStdout();
+  const columns = stdout?.columns ?? 80;
+
+  // Refs for the key handler — avoids stale closures
   const valRef = useRef(value);
   const curRef = useRef(cursor);
+  const historyRef = useRef(history);
+  const historyIdxRef = useRef(historyIdx);
+  const savedInputRef = useRef(savedInput);
+  valRef.current = value;
+  curRef.current = cursor;
+  historyRef.current = history;
+  historyIdxRef.current = historyIdx;
+  savedInputRef.current = savedInput;
 
-  // Sync ref when parent changes value externally (history nav)
-  useEffect(() => {
-    valRef.current = value;
-    curRef.current = value.length;
-    setCursor(value.length);
-  }, [value]);
+  const doSubmit = useCallback((text: string) => {
+    if (!text.trim()) return;
+    const trimmed = text.trim();
 
-  useInput((input, key) => {
+    const h = historyRef.current;
+    const newHistory = h[h.length - 1] === trimmed ? h : [...h, trimmed];
+    setHistory(newHistory);
+    saveHistory(newHistory);
+    setHistoryIdx(-1);
+    setSavedInput("");
+
+    onSubmit(trimmed);
+    setValue("");
+    setCursor(0);
+    valRef.current = "";
+    curRef.current = 0;
+  }, [onSubmit]);
+
+  // Register consolidated key handler via ref
+  const handler = useCallback((input: string, key: any) => {
+    // History navigation
+    if (key.upArrow && !key.shift) {
+      const h = historyRef.current;
+      const idx = historyIdxRef.current;
+      if (h.length === 0) return;
+      const newIdx = Math.min(idx + 1, h.length - 1);
+      if (idx === -1) setSavedInput(valRef.current);
+      setHistoryIdx(newIdx);
+      const newVal = h[h.length - 1 - newIdx] ?? "";
+      setValue(newVal);
+      setCursor(newVal.length);
+      valRef.current = newVal;
+      curRef.current = newVal.length;
+      return;
+    }
+    if (key.downArrow && !key.shift) {
+      if (historyIdxRef.current <= 0) {
+        setHistoryIdx(-1);
+        const newVal = savedInputRef.current;
+        setValue(newVal);
+        setCursor(newVal.length);
+        valRef.current = newVal;
+        curRef.current = newVal.length;
+        return;
+      }
+      const newIdx = historyIdxRef.current - 1;
+      setHistoryIdx(newIdx);
+      const h = historyRef.current;
+      const newVal = h[h.length - 1 - newIdx] ?? "";
+      setValue(newVal);
+      setCursor(newVal.length);
+      valRef.current = newVal;
+      curRef.current = newVal.length;
+      return;
+    }
+
+    // Text editing
     const val = valRef.current;
     const cur = curRef.current;
 
     if (key.return) {
-      onSubmit(val);
+      doSubmit(val);
       return;
     }
 
-    // Ignore keys handled by parent (escape, up/down arrows, tab)
-    if (key.escape || key.upArrow || key.downArrow || key.tab) return;
+    if (key.escape || key.tab) return;
 
     let newVal = val;
     let newCur = cur;
@@ -94,7 +189,6 @@ function LineInput({
       }
     } else if (key.leftArrow) {
       if (key.ctrl || key.meta) {
-        // Word jump left: skip to start of previous word
         const before = val.slice(0, cur);
         const match = before.match(/(?:^|\s)\S*$/);
         newCur = match ? cur - match[0].length : 0;
@@ -103,7 +197,6 @@ function LineInput({
       }
     } else if (key.rightArrow) {
       if (key.ctrl || key.meta) {
-        // Word jump right: skip to end of next word
         const after = val.slice(cur);
         const match = after.match(/^\S*\s?/);
         newCur = match ? cur + match[0].length : val.length;
@@ -129,95 +222,17 @@ function LineInput({
       newCur = cur + input.length;
     }
 
-    // Update refs immediately so the next keystroke (before re-render) sees fresh state
+    // Update refs immediately
     valRef.current = newVal;
     curRef.current = newCur;
 
-    if (newVal !== val) onChange(newVal);
+    if (newVal !== val) setValue(newVal);
     if (newCur !== cur) setCursor(newCur);
-  });
+  }, [doSubmit]);
 
-  if (value.length === 0 && placeholder) {
-    return <Text dimColor>{placeholder}</Text>;
-  }
-
-  const width = Math.max(1, availableWidth);
-
-  // Wrap text into lines of `width` characters
-  const lines: string[] = [];
-  for (let i = 0; i < value.length; i += width) {
-    lines.push(value.slice(i, i + width));
-  }
-  if (lines.length === 0) lines.push("");
-
-  // Find which line the cursor is on
-  const cursorLine = Math.floor(cursor / width);
-  const cursorCol = cursor % width;
-
-  return (
-    <Box flexDirection="column">
-      {lines.map((line, i) => {
-        if (i === cursorLine) {
-          const before = line.slice(0, cursorCol);
-          const cursorChar = cursorCol < line.length ? line[cursorCol] : " ";
-          const after = line.slice(cursorCol + 1);
-          return (
-            <Text key={i}>
-              {before}
-              <Text inverse>{cursorChar}</Text>
-              {after}
-            </Text>
-          );
-        }
-        return <Text key={i}>{line}</Text>;
-      })}
-    </Box>
-  );
-}
-
-export function InputArea({ onSubmit, disabled, incognito, streaming, status }: InputAreaProps) {
-  const [value, setValue] = useState("");
-  const [history, setHistory] = useState<string[]>(() => loadHistory());
-  const [historyIdx, setHistoryIdx] = useState(-1);
-  const [savedInput, setSavedInput] = useState("");
-  const { stdout } = useStdout();
-  const columns = stdout?.columns ?? 80;
-
-  useInput((_input, key) => {
-    if (key.upArrow && !key.shift) {
-      if (history.length === 0) return;
-      const newIdx = Math.min(historyIdx + 1, history.length - 1);
-      if (historyIdx === -1) setSavedInput(value);
-      setHistoryIdx(newIdx);
-      setValue(history[history.length - 1 - newIdx] ?? "");
-    }
-    if (key.downArrow && !key.shift) {
-      if (historyIdx <= 0) {
-        setHistoryIdx(-1);
-        setValue(savedInput);
-        return;
-      }
-      const newIdx = historyIdx - 1;
-      setHistoryIdx(newIdx);
-      setValue(history[history.length - 1 - newIdx] ?? "");
-    }
-  });
-
-  const handleSubmit = (text: string) => {
-    if (!text.trim()) return;
-    const trimmed = text.trim();
-
-    const newHistory = history[history.length - 1] === trimmed
-      ? history
-      : [...history, trimmed];
-    setHistory(newHistory);
-    saveHistory(newHistory);
-    setHistoryIdx(-1);
-    setSavedInput("");
-
-    onSubmit(trimmed);
-    setValue("");
-  };
+  useEffect(() => {
+    if (onKeyRef) onKeyRef.current = handler;
+  }, [handler, onKeyRef]);
 
   if (incognito) {
     if (streaming) {
@@ -230,9 +245,7 @@ export function InputArea({ onSubmit, disabled, incognito, streaming, status }: 
         <Text color="green">{prompt}</Text>
         <LineInput
           value={value}
-          onChange={setValue}
-          onSubmit={handleSubmit}
-          prefix={prompt}
+          cursor={cursor}
           availableWidth={availableWidth}
         />
       </Box>
@@ -248,8 +261,7 @@ export function InputArea({ onSubmit, disabled, incognito, streaming, status }: 
       <Text bold color="cyan">&gt; </Text>
       <LineInput
         value={value}
-        onChange={setValue}
-        onSubmit={handleSubmit}
+        cursor={cursor}
         placeholder={disabled ? "Connecting..." : "Type a message... (Up/Down for history)"}
         availableWidth={availableWidth}
       />

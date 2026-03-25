@@ -1,4 +1,10 @@
 import { spawn, type Subprocess } from "bun";
+import { writeFileSync, mkdirSync } from "fs";
+import { join } from "path";
+import { homedir } from "os";
+
+const STATE_DIR = process.env.CONDUIT_STATE_DIR ?? join(homedir(), ".local", "state", "claude-assist");
+const TUNNEL_URL_FILE = join(STATE_DIR, "tunnel-url");
 
 /**
  * Manages a cloudflared tunnel as a child process.
@@ -72,6 +78,12 @@ export class TunnelManager {
           if (urlMatch && !this._publicUrl) {
             this._publicUrl = urlMatch[0];
             console.log(`[tunnel] Public URL: ${this._publicUrl}`);
+            try {
+              mkdirSync(STATE_DIR, { recursive: true });
+              writeFileSync(TUNNEL_URL_FILE, this._publicUrl);
+            } catch (err) {
+              console.error(`[tunnel] Failed to persist URL to ${TUNNEL_URL_FILE}:`, err);
+            }
             this.urlResolve?.(this._publicUrl);
           }
 

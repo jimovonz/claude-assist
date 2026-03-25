@@ -1,9 +1,11 @@
 import { Bot } from "grammy";
 import type { Channel } from "../router";
+import type { SessionManager } from "../session";
 
 export interface TelegramConfig {
   botToken: string;
   allowedUserIds?: string[];
+  sessionManager?: SessionManager;
 }
 
 export class TelegramChannel implements Channel {
@@ -12,6 +14,7 @@ export class TelegramChannel implements Channel {
 
   private bot: Bot;
   private allowedUserIds: Set<string>;
+  private sessionManager?: SessionManager;
   private onMessage?: (userId: string, text: string) => void;
   private statusMessages = new Map<string, number>();
   private lastStatusEdit = new Map<string, number>();
@@ -23,6 +26,7 @@ export class TelegramChannel implements Channel {
   constructor(config: TelegramConfig) {
     this.bot = new Bot(config.botToken);
     this.allowedUserIds = new Set(config.allowedUserIds ?? []);
+    this.sessionManager = config.sessionManager;
   }
 
   async start(onMessage: (userId: string, text: string) => void) {
@@ -38,6 +42,37 @@ export class TelegramChannel implements Channel {
 
       const text = ctx.message.text;
       console.log(`[telegram] Message from ${userId}: ${text.substring(0, 50)}...`);
+
+      // Handle commands
+      const trimmed = text.trim();
+
+      if (trimmed === "/clear") {
+        this.sessionManager?.removeSession(`telegram:${userId}`);
+        const chatId = parseInt(userId);
+        this.bot.api.sendMessage(chatId, "Session cleared. Next message starts fresh.").catch(() => {});
+        console.log(`[telegram] Cleared session for ${userId}`);
+        return;
+      }
+
+      if (trimmed === "/context") {
+        const chatId = parseInt(userId);
+        const channelId = `telegram:${userId}`;
+        const usage = this.sessionManager?.getUsage(channelId);
+        if (!usage) {
+          this.bot.api.sendMessage(chatId, "No usage data yet — send a message first.").catch(() => {});
+        } else {
+          const totalInput = usage.inputTokens + usage.cacheReadTokens + usage.cacheCreationTokens;
+          const pct = usage.contextWindow > 0 ? ((totalInput + usage.outputTokens) / usage.contextWindow * 100).toFixed(1) : "?";
+          const msg = [
+            `Context: ${pct}% of ${(usage.contextWindow / 1000).toFixed(0)}K`,
+            `In: ${(totalInput / 1000).toFixed(1)}K (${(usage.cacheReadTokens / 1000).toFixed(1)}K cached)`,
+            `Out: ${(usage.outputTokens / 1000).toFixed(1)}K`,
+            `Cost: $${usage.totalCostUsd.toFixed(2)}`,
+          ].join("\n");
+          this.bot.api.sendMessage(chatId, msg).catch(() => {});
+        }
+        return;
+      }
 
       this.onMessage?.(userId, text);
     });
@@ -152,8 +187,7 @@ export class TelegramChannel implements Channel {
     // Flush any pending status update first
     this.flushPending(userId);
     this.stopTyping(userId);
-    this.statusMessages.delete(userId);
-    this.lastStatusEdit.delete(userId);
+    await this.deleteStatusMessage(userId);
 
     const chatId = parseInt(userId);
     const maxLen = 4096;
@@ -189,11 +223,26 @@ export class TelegramChannel implements Channel {
   async replyWithView(userId: string, summary: string, viewUrl: string) {
     this.flushPending(userId);
     this.stopTyping(userId);
-    this.statusMessages.delete(userId);
-    this.lastStatusEdit.delete(userId);
+    await this.deleteStatusMessage(userId);
 
     const chatId = parseInt(userId);
     await this.bot.api.sendMessage(chatId, `${summary}\n\n📄 Full response: ${viewUrl}`);
+  }
+
+  async clearStatus(userId: string) {
+    this.flushPending(userId);
+    this.stopTyping(userId);
+    await this.deleteStatusMessage(userId);
+  }
+
+  private async deleteStatusMessage(userId: string) {
+    const chatId = parseInt(userId);
+    const msgId = this.statusMessages.get(userId);
+    if (msgId) {
+      try { await this.bot.api.deleteMessage(chatId, msgId); } catch {}
+    }
+    this.statusMessages.delete(userId);
+    this.lastStatusEdit.delete(userId);
   }
 
   private flushPending(userId: string) {

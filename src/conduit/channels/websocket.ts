@@ -23,7 +23,6 @@ export class WebSocketChannel implements Channel {
   private userSockets = new Map<string, ServerWebSocket<ClientState>>();
   private onMessage?: (userId: string, text: string) => void;
   private pingInterval: Timer | null = null;
-  private reconnectedUsers = new Set<string>();
 
   constructor(config: WebSocketChannelConfig = {}) {
     this.authToken = config.authToken;
@@ -132,15 +131,18 @@ export class WebSocketChannel implements Channel {
       if (existing && existing !== ws) {
         existing.close(4002, "Replaced by new connection");
       }
-      // Detect session restoration: existing Claude session for this user
-      const channelId = `${this.id}:${state.userId}`;
-      if (this.sessionManager?.getSession(channelId)) {
-        this.reconnectedUsers.add(state.userId);
-        console.log(`[tui] Session exists for ${channelId} — marking as reconnect`);
-      }
       this.userSockets.set(state.userId, ws);
       ws.send(JSON.stringify({ type: "auth_ok", userId: state.userId }));
-      console.log(`[tui] Client authenticated: ${state.userId}${existing ? " (reconnect)" : ""}`);
+
+      // Detect session restoration: existing Claude session for this user
+      const channelId = `${this.id}:${state.userId}`;
+      const hasSession = this.sessionManager?.getSession(channelId);
+      console.log(`[tui] Client authenticated: ${state.userId}${hasSession ? " (session restore)" : ""}`);
+
+      // Auto-fire greeting on reconnect — streams summary before user can type
+      if (hasSession && this.onMessage) {
+        this.onMessage(state.userId, `[${this.name} session restored — client reconnected. Greet the user and briefly summarise what you were working on.]`);
+      }
       return;
     }
 
@@ -215,14 +217,6 @@ export class WebSocketChannel implements Channel {
     if (ws) {
       ws.send(JSON.stringify(msg));
     }
-  }
-
-  consumeReconnect(userId: string): boolean {
-    if (this.reconnectedUsers.has(userId)) {
-      this.reconnectedUsers.delete(userId);
-      return true;
-    }
-    return false;
   }
 
   get connectedClients(): number {

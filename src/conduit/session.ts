@@ -8,8 +8,17 @@ const DEFAULT_CWD = join(homedir(), "Projects");
 export type SessionEvent =
   | { type: "status"; text: string }
   | { type: "text"; text: string }
-  | { type: "result"; text: string; sessionId: string }
+  | { type: "result"; text: string; sessionId: string; usage?: UsageInfo }
   | { type: "aborted" };
+
+export interface UsageInfo {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  totalCostUsd: number;
+  contextWindow: number;
+}
 
 export interface SessionOptions {
   channelId: string;
@@ -26,6 +35,7 @@ export interface Session {
   buffer: string;
   lastActivity: number;
   wasAborted?: boolean;
+  lastUsage?: UsageInfo;
 }
 
 export interface SessionManagerConfig {
@@ -230,13 +240,24 @@ export class SessionManager {
             session.lastActivity = Date.now();
             session.sessionId = sessionId;
 
+            // Extract usage info
+            const usage: UsageInfo | undefined = msg.usage ? {
+              inputTokens: msg.usage.input_tokens ?? 0,
+              outputTokens: msg.usage.output_tokens ?? 0,
+              cacheReadTokens: msg.usage.cache_read_input_tokens ?? 0,
+              cacheCreationTokens: msg.usage.cache_creation_input_tokens ?? 0,
+              totalCostUsd: msg.total_cost_usd ?? 0,
+              contextWindow: msg.modelUsage ? Object.values(msg.modelUsage as Record<string, any>)[0]?.contextWindow ?? 0 : 0,
+            } : undefined;
+            if (usage) session.lastUsage = usage;
+
             // Persist session ID to disk for restart recovery
             if (sessionId) {
               this.persistSession(channelId, sessionId);
             }
 
             console.log(`[session] Result for ${channelId}, ${resultText.length} chars`);
-            yield { type: "result", text: resultText, sessionId };
+            yield { type: "result", text: resultText, sessionId, usage };
             return;
           }
         } catch {}
@@ -267,6 +288,10 @@ export class SessionManager {
       return true;
     }
     return false;
+  }
+
+  getUsage(channelId: string): UsageInfo | undefined {
+    return this.sessions.get(channelId)?.lastUsage;
   }
 
   abort(channelId: string): boolean {

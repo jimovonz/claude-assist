@@ -71,20 +71,39 @@ export function App({ host, token }: AppProps) {
     }
   }, [messages]);
 
-  // Ctrl+C to exit, Ctrl+L to clear screen, Escape/Ctrl+X to cancel
-  useInput((input, key) => {
+  // Refs for child key handlers — single useInput dispatches to all
+  const scrollHandlerRef = useRef<(input: string, key: any) => void>();
+  const inputHandlerRef = useRef<(input: string, key: any) => void>();
+  const streamingRef = useRef(streaming || pending);
+  streamingRef.current = streaming || pending;
+
+  // Single useInput — eliminates 3 redundant batchedUpdates per keystroke
+  useInput(useCallback((input: string, key: any) => {
+    // App-level shortcuts (highest priority)
     if (key.ctrl && input === "c") {
       conn.disconnect();
       exit();
+      return;
     }
     if (key.ctrl && input === "l") {
       setMessages([]);
       setStatus("");
+      return;
     }
-    if ((key.escape || (key.ctrl && input === "x")) && (streaming || pending)) {
+    if ((key.escape || (key.ctrl && input === "x")) && streamingRef.current) {
       conn.sendCancel();
+      return;
     }
-  });
+
+    // Scroll keys → MessageList
+    if (key.pageUp || key.pageDown || key.home || key.end || (key.shift && (key.upArrow || key.downArrow))) {
+      scrollHandlerRef.current?.(input, key);
+      return;
+    }
+
+    // Everything else → InputArea (text editing + history)
+    inputHandlerRef.current?.(input, key);
+  }, [conn, exit]));
 
   useEffect(() => {
     conn.on("state", (state: ConnectionState) => {
@@ -254,7 +273,7 @@ export function App({ host, token }: AppProps) {
         </Box>
       )}
 
-      <MessageList messages={messages} incognito={incognito} />
+      <MessageList messages={messages} incognito={incognito} onKeyRef={scrollHandlerRef} />
       {!incognito && <StatusBar connectionState={connectionState} status={status} />}
       <InputArea
         onSubmit={handleSubmit}
@@ -262,6 +281,7 @@ export function App({ host, token }: AppProps) {
         incognito={incognito}
         streaming={streaming || pending}
         status={status}
+        onKeyRef={inputHandlerRef}
       />
     </Box>
   );
