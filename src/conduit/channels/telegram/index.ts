@@ -1,11 +1,39 @@
 import { Bot } from "grammy";
 import type { Channel } from "../router";
 import type { SessionManager } from "../session";
+import { loadViewIndex, createViewAsync, type ViewRecord } from "../../../views/renderer";
+
+const EDGE_URL = process.env.EDGE_URL ?? "";
 
 export interface TelegramConfig {
   botToken: string;
   allowedUserIds?: string[];
   sessionManager?: SessionManager;
+}
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function buildViewsListMarkdown(views: ViewRecord[]): string {
+  const lines: string[] = ["## Previous Responses\n"];
+
+  let currentDay = "";
+  for (const v of views.slice(0, 50)) {
+    const date = new Date(v.createdAt);
+    const day = date.toLocaleDateString("en-NZ", { weekday: "short", day: "numeric", month: "short" });
+    const time = date.toLocaleTimeString("en-NZ", { hour: "2-digit", minute: "2-digit", hour12: false });
+    const size = v.chars > 1000 ? `${(v.chars / 1000).toFixed(1)}K` : `${v.chars}`;
+
+    if (day !== currentDay) {
+      lines.push(`\n### ${day}\n`);
+      currentDay = day;
+    }
+
+    lines.push(`- [${v.title}](${v.url}) — ${time} (${size} chars)`);
+  }
+
+  return lines.join("\n");
 }
 
 export class TelegramChannel implements Channel {
@@ -32,7 +60,7 @@ export class TelegramChannel implements Channel {
   async start(onMessage: (userId: string, text: string) => void) {
     this.onMessage = onMessage;
 
-    this.bot.on("message:text", (ctx) => {
+    this.bot.on("message:text", async (ctx) => {
       const userId = ctx.from.id.toString();
 
       if (this.allowedUserIds.size > 0 && !this.allowedUserIds.has(userId)) {
@@ -51,6 +79,27 @@ export class TelegramChannel implements Channel {
         const chatId = parseInt(userId);
         this.bot.api.sendMessage(chatId, "Session cleared. Next message starts fresh.").catch(() => {});
         console.log(`[telegram] Cleared session for ${userId}`);
+        return;
+      }
+
+      if (trimmed === "/views") {
+        const chatId = parseInt(userId);
+        const views = loadViewIndex();
+        if (views.length === 0) {
+          this.bot.api.sendMessage(chatId, "No views yet.").catch(() => {});
+        } else {
+          const content = buildViewsListMarkdown(views);
+          try {
+            const { token, url: edgeUrl } = await createViewAsync({
+              content, title: "Previous Responses", channel: "telegram", userId,
+            });
+            const baseUrl = EDGE_URL || `http://localhost:8099`;
+            const viewUrl = edgeUrl ?? `${baseUrl}/view/${token}`;
+            this.bot.api.sendMessage(chatId, `📄 Previous responses: ${viewUrl}`).catch(() => {});
+          } catch (err: any) {
+            this.bot.api.sendMessage(chatId, `Error generating views page: ${err.message}`).catch(() => {});
+          }
+        }
         return;
       }
 

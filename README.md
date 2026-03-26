@@ -74,8 +74,14 @@ bun run start
 
 ```
 TELEGRAM_BOT_TOKEN=     # Required — from @BotFather
+TELEGRAM_OWNER_ID=      # Optional — receives restart notifications
 VIEW_PORT=8099          # Optional — view server port (default: 8099)
-VIEW_BASE_URL=          # Optional — Cloudflare Tunnel URL for view links
+VIEW_BASE_URL=          # Optional — base URL for view links
+EDGE_URL=               # Optional — GCE edge server for remote TUI access
+EDGE_API_SECRET=        # Optional — edge API auth token
+TUI_AUTH_TOKEN=          # Optional — WebSocket auth for TUI clients
+CAIRN_DIR=              # Optional — path to cairn repo (default: ~/Projects/cairn)
+CLOUDFLARE_TUNNEL_TOKEN= # Optional — for named Cloudflare tunnel
 ```
 
 ## Architecture
@@ -88,10 +94,15 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full architectural breakdown, des
 |-----------|------|---------|
 | **Session Manager** | `src/conduit/session.ts` | Persistent `claude -p` processes per channel, stream-json I/O |
 | **Router** | `src/conduit/router.ts` | Channel routing, Cairn hook integration, status streaming, view creation |
-| **Telegram** | `src/conduit/channels/telegram.ts` | Grammy bot, status edits, typing indicator, message queuing |
+| **Telegram** | `src/conduit/channels/telegram/` | Grammy bot, status edits, typing indicator, message queuing |
+| **WebSocket/TUI** | `src/conduit/channels/websocket/` | WebSocket channel for local and remote TUI clients |
+| **Edge Relay** | `src/service/edge-relay.ts` | Outbound WebSocket to GCE edge for NAT-friendly remote TUI access |
 | **Hooks** | `src/conduit/hooks.ts` | Cairn prompt/stop hook runners |
-| **View Renderer** | `src/views/renderer.ts` | Markdown-to-HTML, syntax highlighting |
-| **View Server** | `src/views/server.ts` | Bun.serve() for HTML views, token-based URLs, auto-cleanup |
+| **View Renderer** | `src/views/renderer.ts` | Markdown-to-HTML with XSS prevention |
+| **View Server** | `src/views/server.ts` | Bun.serve() for HTML views, WebSocket, health endpoint, auto-cleanup |
+| **Tunnel** | `src/service/tunnel.ts` | Cloudflare Tunnel management (named or quick) |
+| **Watchdog** | `src/service/watchdog.ts` | systemd watchdog integration via FFI |
+| **systemd** | `src/service/systemd.ts` | Service unit generation, install, status, logs |
 
 ### Conduit naming
 
@@ -101,15 +112,22 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full architectural breakdown, des
 
 ## Status
 
-MVP — functional Telegram integration with Cairn memory and HTML views. Work in progress:
+Functional multi-channel assistant with Telegram, TUI, remote TUI access, and HTML views.
 
+**Done:**
+- [x] Telegram channel with status streaming, message chunking, and commands (`/clear`, `/views`, `/context`)
+- [x] WebSocket/TUI channel with auth, streaming, and session restore
+- [x] Remote TUI access via GCE edge relay (NAT-friendly outbound WebSocket)
+- [x] Cloudflare Tunnel integration (named or quick)
+- [x] systemd service with watchdog integration
+- [x] Session persistence across restarts (SQLite)
+- [x] HTML view rendering with edge push and Telegram Mini App support
+- [x] Cairn memory integration (prompt and stop hooks)
+
+**Planned:**
+- [ ] Scheduled agent tasks (cron) with Google API integration
 - [ ] Web CLI channel (browser-based terminal)
-- [ ] Remote CLI channel (thin terminal client)
-- [ ] Cloudflare Tunnel auto-setup
-- [ ] systemd service for always-on
-- [ ] Session persistence across restarts
-- [ ] Slash commands from Telegram (`/clear`, `/sessions`, `/switch`)
-- [ ] Telegram Mini Apps for interactive content
+- [ ] Telegram Mini Apps for interactive two-way content
 
 ## License
 

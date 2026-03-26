@@ -269,7 +269,7 @@ describe("connection lifecycle", () => {
 // =============================================================================
 
 describe("no-auth mode", () => {
-  test("channel without authToken auto-authenticates clients", async () => {
+  test("channel without authToken accepts any token in auth message", async () => {
     const noAuthChannel = new WebSocketChannel(); // no token
     const noAuthPort = TEST_PORT + 1;
     const noAuthServer = new ViewServer({
@@ -283,6 +283,10 @@ describe("no-auth mode", () => {
     const messages: any[] = [];
 
     await new Promise<void>((resolve) => {
+      ws.onopen = () => {
+        // Even without authToken configured, client still sends auth to register userId
+        ws.send(JSON.stringify({ type: "auth", token: "anything" }));
+      };
       ws.onmessage = (event) => {
         messages.push(JSON.parse(String(event.data)));
         if (messages.some((m) => m.type === "auth_ok")) resolve();

@@ -107,8 +107,9 @@ export class EdgeRelay implements Channel {
 
     switch (data.type) {
       case "auth":
-        // TUI client authenticated via edge — log it
+        // TUI client authenticated via edge — send auth_ok back
         console.log(`[edge-relay] Remote TUI authenticated: ${userId}`);
+        this.send(userId, { type: "auth_ok", userId });
 
         // Check for session restore
         const channelId = `${this.id}:${userId}`;

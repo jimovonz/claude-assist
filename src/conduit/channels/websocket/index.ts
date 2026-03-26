@@ -72,6 +72,10 @@ export class WebSocketChannel implements Channel {
     this.send(userId, { type: "status", text });
   }
 
+  async clearStatus(userId: string) {
+    this.send(userId, { type: "status", text: "" });
+  }
+
   async sendStreamText(userId: string, text: string) {
     this.send(userId, { type: "text", text });
   }

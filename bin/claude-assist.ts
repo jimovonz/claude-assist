@@ -104,6 +104,19 @@ async function start() {
   startWatchdog();
 
   console.log("[conduit] Service ready");
+
+  // Notify owner of restart via Telegram (delayed to allow edge relay to connect)
+  const ownerId = process.env.TELEGRAM_OWNER_ID;
+  if (ownerId) {
+    setTimeout(async () => {
+      const { Bot } = await import("grammy");
+      const notifyBot = new Bot(env.telegramToken);
+      const edgeStatus = edgeRelay?.connected ? "edge connected" : "edge not connected";
+      await notifyBot.api.sendMessage(parseInt(ownerId),
+        `🔄 claude-assist restarted\n${edgeStatus}`
+      ).catch((e: any) => console.error(`[conduit] Failed to send restart notification: ${e.message}`));
+    }, 5000);
+  }
 }
 
 switch (command) {
@@ -146,8 +159,14 @@ Usage:
 
 Environment:
   TELEGRAM_BOT_TOKEN     Bot token from @BotFather (required)
+  TELEGRAM_OWNER_ID      Telegram user ID for restart notifications
   VIEW_PORT              Port for view server (default: 8099)
   VIEW_BASE_URL          Base URL for view links (default: http://localhost:VIEW_PORT)
+  EDGE_URL               GCE edge server URL for remote TUI access
+  EDGE_API_SECRET        Bearer token for edge API
+  TUI_AUTH_TOKEN          WebSocket auth token for TUI clients
+  CAIRN_DIR              Path to cairn repo (default: ~/Projects/cairn)
+  CLOUDFLARE_TUNNEL_TOKEN  Named tunnel token from cloudflared
 `);
     break;
 

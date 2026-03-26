@@ -16,6 +16,19 @@ export function stripMetadata(text: string): string {
     .trim();
 }
 
+export function extractTitle(text: string): string {
+  // Try first markdown heading
+  const heading = text.match(/^#{1,3}\s+(.+)$/m);
+  if (heading) return heading[1].substring(0, 80);
+  // Try first bold text
+  const bold = text.match(/\*\*(.+?)\*\*/);
+  if (bold) return bold[1].substring(0, 80);
+  // Fall back to first non-empty line
+  const firstLine = text.split("\n").find(l => l.trim().length > 0);
+  if (firstLine) return firstLine.trim().substring(0, 80);
+  return "Claude Response";
+}
+
 export function summarize(text: string, maxLen = 200): string {
   const firstPara = text.split("\n\n")[0];
   if (firstPara.length <= maxLen) return firstPara;
@@ -202,22 +215,29 @@ export class Router {
 
       // Send result to client immediately so the prompt is available
       clearInterval(heartbeatInterval);
+      console.log(`[conduit] Raw response (${response.length} chars), first 200: ${response.substring(0, 200)}`);
       const cleaned = stripMetadata(response);
       console.log(`[conduit] Response (${cleaned.length} chars), session: ${currentSessionId}`);
 
       if (!cleaned) {
-        console.log(`[conduit] Empty response after stripping — suppressing`);
+        console.log(`[conduit] ZERO OUTPUT — raw ${response.length} chars stripped to 0`);
+        console.log(`[conduit] ZERO OUTPUT — full raw response:\n---START---\n${response}\n---END---`);
+        console.log(`[conduit] ZERO OUTPUT — channel: ${channel.name}, userId: ${userId}`);
         if (channel.clearStatus) await channel.clearStatus(userId);
+        await channel.reply(userId, "No response generated.");
         return;
       }
 
       if (this.viewServer && channel.replyWithView && shouldCreateView(cleaned)) {
         const summary = summarize(cleaned);
-        const { token, url: edgeUrl } = await createViewAsync({ content: cleaned });
+        const title = extractTitle(cleaned);
+        console.log(`[conduit] Creating view for ${cleaned.length} char response (title: "${title}", summary: ${summary.length} chars)`);
+        const { token, url: edgeUrl } = await createViewAsync({ content: cleaned, title, channel: channel.id, userId });
         const viewUrl = edgeUrl ?? this.viewServer.getViewUrl(token);
         console.log(`[conduit] Created view: ${viewUrl}`);
         await channel.replyWithView(userId, summary, viewUrl);
       } else {
+        console.log(`[conduit] Sending direct reply (${cleaned.length} chars) to ${channel.name}`);
         await channel.reply(userId, cleaned);
       }
 
@@ -230,6 +250,7 @@ export class Router {
       if (stopResult.block && stopResult.reason) {
         const isContextRetrieval = stopResult.reason.startsWith("CAIRN CONTEXT:");
         console.log(`[conduit] Stop hook blocked — ${isContextRetrieval ? "context retrieval" : "enforcement"}`);
+        console.log(`[conduit] Stop hook reason (${stopResult.reason.length} chars): ${stopResult.reason.substring(0, 200)}`);
 
         for await (const event of this.sessionManager.sendMessage(
           channelId,
@@ -253,15 +274,30 @@ export class Router {
           }
         }
 
+        // Log enforcement re-prompt results even though they aren't sent to user
+        if (!isContextRetrieval) {
+          const enforcementCleaned = stripMetadata(response);
+          console.log(`[conduit] Enforcement re-prompt result: raw ${response.length} → cleaned ${enforcementCleaned.length} chars (not sent to user)`);
+          if (enforcementCleaned) {
+            console.log(`[conduit] Enforcement re-prompt content (first 300): ${enforcementCleaned.substring(0, 300)}`);
+          }
+        }
+
         // Only send re-prompt result for context retrieval
         if (isContextRetrieval) {
           const repromptCleaned = stripMetadata(response);
+          console.log(`[conduit] Re-prompt response: raw ${response.length} chars → cleaned ${repromptCleaned.length} chars`);
           if (repromptCleaned) {
             await channel.reply(userId, repromptCleaned);
+          } else {
+            console.log(`[conduit] ZERO OUTPUT on re-prompt — full raw:\n---START---\n${response}\n---END---`);
           }
         }
 
         await runStopHook(currentSessionId, response, DEFAULT_CWD, true);
+
+        // Clear any lingering status from enforcement re-prompts
+        if (channel.clearStatus) await channel.clearStatus(userId);
       }
     } catch (err) {
       clearInterval(heartbeatInterval);

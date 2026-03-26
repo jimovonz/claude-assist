@@ -80,8 +80,8 @@ echo
 echo "=== Installation complete ==="
 echo
 info "Edit your config:   $ENV_FILE"
-info "Start the service:  claude-assist service start"
-info "Check status:        claude-assist status"
-info "Follow logs:         claude-assist logs -f"
+info "Start the service:  bun run $PROJECT_DIR/bin/claude-assist.ts service start"
+info "Check status:        bun run $PROJECT_DIR/bin/claude-assist.ts status"
+info "Follow logs:         bun run $PROJECT_DIR/bin/claude-assist.ts logs -f"
 echo
 info "Or run directly:     bun run start"

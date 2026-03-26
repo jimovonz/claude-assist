@@ -7,6 +7,7 @@ export interface Message {
   role: "user" | "assistant";
   text: string;
   streaming?: boolean;
+  cancelled?: boolean;
 }
 
 interface MessageBlockProps {
@@ -16,6 +17,17 @@ interface MessageBlockProps {
 
 export const MessageBlock = React.memo(function MessageBlock({ message, incognito }: MessageBlockProps) {
   const isUser = message.role === "user";
+
+  if (message.cancelled) {
+    if (incognito) {
+      return <Box><Text dimColor italic>Cancelled</Text></Box>;
+    }
+    return (
+      <Box flexDirection="column" marginBottom={1}>
+        <Text dimColor italic>Cancelled</Text>
+      </Box>
+    );
+  }
 
   if (incognito) {
     return (

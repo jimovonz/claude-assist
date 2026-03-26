@@ -29,24 +29,24 @@ describe("stop hook", () => {
   test("does not block when response has context:sufficient", async () => {
     const result = await runStopHook(
       "test-session-" + Date.now(),
-      "All good.\n\n<memory>\n- type: fact\n- topic: test\n- content: test\n- complete: true\n- context: sufficient\n</memory>",
+      "All good.\n\n<memory>\n- type: fact\n- topic: hook integration test\n- content: Verified that the stop hook correctly passes through responses with all required fields present and valid\n- complete: true\n- context: sufficient\n- keywords: hook, test, integration\n</memory>",
       "/tmp"
     );
 
     expect(result.block).toBe(false);
   });
 
-  test("blocks when response is missing required memory block", async () => {
-    // The real Cairn stop hook enforces that every response has a <memory> block.
-    // A response without one should trigger a block with a reason explaining why.
+  test("blocks when memory block is missing required fields", async () => {
+    // The real Cairn stop hook enforces that memory blocks have all required fields.
+    // A memory block missing 'keywords' should trigger a block.
     const result = await runStopHook(
       "test-session-" + Date.now(),
-      "Here is a response with no memory block at all.",
+      "Response.\n\n<memory>\n- type: fact\n- topic: test\n- content: test\n- complete: true\n- context: sufficient\n</memory>",
       "/tmp"
     );
 
     expect(result.block).toBe(true);
-    expect(result.reason).toContain("memory");
+    expect(result.reason).toContain("keywords");
   });
 
   test("gracefully handles empty input without throwing", async () => {

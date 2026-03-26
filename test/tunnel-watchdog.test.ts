@@ -8,42 +8,45 @@ import { test, expect, describe } from "bun:test";
 // startTunnelIfConfigured env-gating.
 // =============================================================================
 
-import { TunnelManager, startTunnelIfConfigured } from "../src/service/tunnel";
+import { TunnelManager, startTunnel } from "../src/service/tunnel";
 
 describe("TunnelManager lifecycle", () => {
   test("start() after stop() does not spawn a process", () => {
-    const tm = new TunnelManager("fake-token");
+    const tm = new TunnelManager({ token: "fake-token", localUrl: "http://localhost:8099" });
     tm.stop();
     tm.start();
 
     // The internal proc should remain null — stop() sets the stopped flag
     // which makes start() return early before spawning
-    // Access internal state to verify (the contract is: no process after stop)
     expect((tm as any).proc).toBeNull();
   });
 
   test("stop() sets stopped flag preventing future restarts", () => {
-    const tm = new TunnelManager("fake-token");
+    const tm = new TunnelManager({ token: "fake-token", localUrl: "http://localhost:8099" });
     expect((tm as any).stopped).toBe(false);
     tm.stop();
     expect((tm as any).stopped).toBe(true);
   });
 
   test("constructor stores the tunnel token", () => {
-    const tm = new TunnelManager("my-secret-token");
+    const tm = new TunnelManager({ token: "my-secret-token", localUrl: "http://localhost:8099" });
     expect((tm as any).token).toBe("my-secret-token");
   });
 });
 
-describe("startTunnelIfConfigured", () => {
-  test("returns null when CLOUDFLARE_TUNNEL_TOKEN is not set", () => {
-    const orig = process.env.CLOUDFLARE_TUNNEL_TOKEN;
+describe("startTunnel", () => {
+  test("returns null when no token and VIEW_BASE_URL is set", async () => {
+    const origToken = process.env.CLOUDFLARE_TUNNEL_TOKEN;
+    const origBase = process.env.VIEW_BASE_URL;
     delete process.env.CLOUDFLARE_TUNNEL_TOKEN;
+    process.env.VIEW_BASE_URL = "https://example.com";
 
-    const result = startTunnelIfConfigured();
+    const result = await startTunnel("http://localhost:8099");
     expect(result).toBeNull();
 
-    if (orig) process.env.CLOUDFLARE_TUNNEL_TOKEN = orig;
+    delete process.env.VIEW_BASE_URL;
+    if (origToken) process.env.CLOUDFLARE_TUNNEL_TOKEN = origToken;
+    if (origBase) process.env.VIEW_BASE_URL = origBase;
   });
 });
 

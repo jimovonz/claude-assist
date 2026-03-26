@@ -111,7 +111,7 @@ Each channel gets its own Claude Code session with isolated conversation context
 
 ## Key Components
 
-### 1. Conduit (core — to build)
+### 1. Conduit (core — operational)
 
 The central process that orchestrates everything.
 
@@ -142,7 +142,7 @@ Direct integration with the Telegram Bot API (not the MCP plugin).
 - Sender allowlist for access control
 - Telegram Mini Apps for rich interactive content (forms, selections, approvals)
 
-### 4. Web CLI (to build)
+### 4. Web CLI (planned)
 
 A browser-based CLI interface served via Cloudflare Tunnel.
 
@@ -152,7 +152,7 @@ A browser-based CLI interface served via Cloudflare Tunnel.
 - Session tabs — view and switch between active sessions
 - Mobile-responsive layout
 
-### 5. Remote CLI (to build)
+### 5. Remote CLI (operational via edge relay)
 
 A thin CLI client that connects from any machine to the Conduit.
 
@@ -161,7 +161,7 @@ A thin CLI client that connects from any machine to the Conduit.
 - Local readline prompt with ANSI-rendered output
 - Usage: `claude-remote`
 
-### 6. Interactive Web View Renderer (to build)
+### 6. Interactive Web View Renderer (operational)
 
 Generates rich HTML pages for content that exceeds Telegram/CLI capabilities.
 

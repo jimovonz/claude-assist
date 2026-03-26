@@ -158,7 +158,7 @@ describe("message processing flow", () => {
     await router.stop();
   }, 10000);
 
-  test("delivers error message when processing fails", async () => {
+  test("delivers fallback message when processing crashes", async () => {
     setScenario("crash");
     const sessionManager = new SessionManager({ command: MOCK_CMD, idleTimeoutMs: 5000 });
     const router = new Router(sessionManager);
@@ -170,8 +170,12 @@ describe("message processing flow", () => {
     channel.onMessageCallback!("user1", "Hello");
     await Bun.sleep(2000);
 
-    // Should get an error reply or "No response generated"
+    // Should get a reply — either an error message or "No response generated"
     expect(channel.replies.length).toBeGreaterThanOrEqual(1);
+    const reply = channel.replies[channel.replies.length - 1];
+    expect(
+      reply.text.includes("No response generated") || reply.text.includes("Error")
+    ).toBe(true);
 
     await router.stop();
   }, 10000);

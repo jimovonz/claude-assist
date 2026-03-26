@@ -116,6 +116,11 @@ export function App({ host, token }: AppProps) {
 
     conn.on("status", (text: string) => {
       setStatus(text);
+      // Empty status signals processing is done (e.g. empty response suppressed)
+      if (!text) {
+        setPending(false);
+        setStreaming(false);
+      }
     });
 
     conn.on("text", (text: string) => {
@@ -167,13 +172,13 @@ export function App({ host, token }: AppProps) {
       setPending(false);
       setStreaming(false);
       setStatus("");
-      // Remove the incomplete streaming message
+      // Replace incomplete streaming message with cancelled indicator
       setMessages((prev) => {
         const last = prev[prev.length - 1];
         if (last?.role === "assistant" && last.streaming) {
-          return prev.slice(0, -1);
+          return [...prev.slice(0, -1), { role: "assistant" as const, text: "Cancelled", streaming: false, cancelled: true }];
         }
-        return prev;
+        return [...prev, { role: "assistant" as const, text: "Cancelled", streaming: false, cancelled: true }];
       });
     });
 

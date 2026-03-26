@@ -235,7 +235,7 @@ export class SessionManager {
 
           // Final result
           if (msg.type === "result") {
-            const resultText = (msg.result as string) ?? "";
+            const resultText = (msg.result as string) || lastAssistantText || "";
             const sessionId = (msg.session_id as string) ?? "";
             session.lastActivity = Date.now();
             session.sessionId = sessionId;
