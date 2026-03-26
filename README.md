@@ -151,7 +151,6 @@ Functional multi-channel assistant with Telegram, TUI, remote TUI access, and HT
 **Planned:**
 - [ ] Todo system — natural language, time-aware reminders, location-aware
 - [ ] Email drafting with review/approval flow (careful scoping required)
-- [ ] Web CLI channel (browser-based terminal)
 - [ ] Generalised setup and configuration for wider accessibility
 
 ## License
