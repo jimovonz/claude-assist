@@ -65,6 +65,23 @@ async function start() {
   router.addChannel(telegram);
   router.addChannel(wsChannel);
 
+  // Wire view action handler — routes button clicks back to sessions
+  viewServer.setActionHandler(async (channelId, actionId, actionLabel) => {
+    const message = `[User clicked "${actionLabel}" (action: ${actionId}) on the view]`;
+    for await (const event of sessionManager.sendMessage(channelId, message, { channelId })) {
+      if (event.type === "result" && event.text) {
+        const parts = channelId.split(":");
+        if (parts[0] === "telegram") {
+          await telegram.reply(parts[1], event.text);
+        } else if (parts[0] === "task") {
+          const { getTask } = await import("../src/conduit/state");
+          const task = getTask(parts[1]);
+          if (task) await telegram.reply(task.telegramUserId, event.text);
+        }
+      }
+    }
+  });
+
   // Edge relay for remote TUI access via GCE
   let edgeRelay: EdgeRelay | null = null;
   if (edgeUrl) {

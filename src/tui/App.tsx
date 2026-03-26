@@ -62,6 +62,7 @@ export function App({ host, token }: AppProps) {
   const [streaming, setStreaming] = useState(false);
   const [pending, setPending] = useState(false); // between send and first text chunk
   const [incognito, setIncognito] = useState(false);
+  const [currentActions, setCurrentActions] = useState<{ id: string; label: string }[] | null>(null);
 
   // Persist messages when they change (skip during streaming)
   const prevMsgsRef = useRef(messages);
@@ -148,16 +149,27 @@ export function App({ host, token }: AppProps) {
       });
     });
 
-    conn.on("result", (text: string) => {
+    conn.on("result", (text: string, actions?: { id: string; label: string }[]) => {
       setPending(false);
       setStreaming(false);
       setStatus("");
+
+      // Append action choices to the text
+      let displayText = text;
+      if (actions?.length) {
+        const actionLines = actions.map((a, i) => `  [${i + 1}] ${a.label}`).join("\n");
+        displayText += `\n\n  Actions:\n${actionLines}`;
+        setCurrentActions(actions);
+      } else {
+        setCurrentActions(null);
+      }
+
       setMessages((prev) => {
         const last = prev[prev.length - 1];
         if (last?.role === "assistant" && last.streaming) {
-          return [...prev.slice(0, -1), { role: "assistant", text, streaming: false }];
+          return [...prev.slice(0, -1), { role: "assistant", text: displayText, streaming: false }];
         }
-        return [...prev, { role: "assistant", text, streaming: false }];
+        return [...prev, { role: "assistant", text: displayText, streaming: false }];
       });
     });
 
@@ -267,7 +279,20 @@ export function App({ host, token }: AppProps) {
         return;
       }
 
-      // Regular message
+      // Handle action selection (numeric input when actions are available)
+      if (currentActions && /^\d+$/.test(text)) {
+        const idx = parseInt(text) - 1;
+        if (idx >= 0 && idx < currentActions.length) {
+          const action = currentActions[idx];
+          setMessages((prev) => [...prev, { role: "user", text: `[${action.label}]`, streaming: false }]);
+          setCurrentActions(null);
+          conn.sendMessage(`[Action: ${action.label}] The user selected "${action.label}" (action: ${action.id}).`);
+          return;
+        }
+      }
+
+      // Regular message — also clears any pending actions
+      if (currentActions) setCurrentActions(null);
       if (streaming || pending) return;
       setMessages((prev) => [...prev, { role: "user", text, streaming: false }]);
       setPending(true);

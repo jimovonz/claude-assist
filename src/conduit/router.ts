@@ -15,6 +15,7 @@ export function stripMetadata(text: string): string {
     .replace(/<cairn_context[\s\S]*?<\/cairn_context>/g, "")
     .replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "")
     .replace(/<notify>\s*(true|false)\s*<\/notify>\s*/gi, "")
+    .replace(/<action\s+id="[^"]*"(?:\s+[^>]*)?>([^<]+)<\/action>/gi, "[$1]")
     .replace(/^Sources:\n(- \[.*?\]\(.*?\)\n?)*/gm, "")
     .trim();
 }
@@ -256,7 +257,7 @@ export class Router {
         const summary = summarize(cleaned);
         const title = extractTitle(cleaned);
         console.log(`[conduit] Creating view for ${cleaned.length} char response (title: "${title}", summary: ${summary.length} chars)`);
-        const { token, url: edgeUrl } = await createViewAsync({ content: cleaned, title, channel: channel.id, userId });
+        const { token, url: edgeUrl } = await createViewAsync({ content: cleaned, title, channel: channel.id, userId, channelId });
         const viewUrl = edgeUrl ?? this.viewServer.getViewUrl(token);
         console.log(`[conduit] Created view: ${viewUrl}`);
         await channel.replyWithView(userId, summary, viewUrl);

@@ -2,6 +2,7 @@ import { randomBytes } from "crypto";
 import type { ServerWebSocket } from "bun";
 import type { Channel } from "../router";
 import type { SessionManager } from "../session";
+import { extractActions } from "../../../views/renderer";
 
 export interface WebSocketChannelConfig {
   authToken?: string;
@@ -58,7 +59,12 @@ export class WebSocketChannel implements Channel {
   // --- Channel interface: outbound to client ---
 
   async reply(userId: string, text: string) {
-    this.send(userId, { type: "result", text });
+    const { content, actions } = extractActions(text);
+    if (actions.length > 0) {
+      this.send(userId, { type: "result", text: content, actions });
+    } else {
+      this.send(userId, { type: "result", text });
+    }
   }
 
   // No replyWithView — TUI always gets full inline responses.

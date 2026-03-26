@@ -103,7 +103,7 @@ export class ConduitConnection extends EventEmitter {
           this.emit("text_end");
           break;
         case "result":
-          this.emit("result", msg.text);
+          this.emit("result", msg.text, msg.actions);
           break;
         case "error":
           this.emit("error", msg.text);

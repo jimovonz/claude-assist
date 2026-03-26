@@ -304,6 +304,7 @@ export class TelegramChannel implements Channel {
         const { token, url: edgeUrl } = await createViewAsync({
           content: viewContent,
           title: taskName,
+          channelId: taskChannelId,
           channel: "telegram",
           userId,
         });

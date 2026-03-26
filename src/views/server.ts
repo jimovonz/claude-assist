@@ -2,6 +2,7 @@ import { join } from "path";
 import { readFileSync, existsSync, readdirSync, statSync, unlinkSync } from "fs";
 import type { ServerWebSocket } from "bun";
 import type { WebSocketChannel } from "../conduit/channels/websocket";
+import { loadViewIndex } from "./renderer";
 
 const VIEWS_DIR = join(import.meta.dir, "..", "..", "views");
 
@@ -10,11 +11,14 @@ export interface HealthProvider {
   activeSessionCount: number;
 }
 
+export type ActionHandler = (channelId: string, actionId: string, actionLabel: string) => Promise<void>;
+
 export interface ViewServerConfig {
   port?: number;
   baseUrl?: string;
   healthProvider?: HealthProvider;
   wsChannel?: WebSocketChannel;
+  onAction?: ActionHandler;
 }
 
 export class ViewServer {
@@ -23,16 +27,22 @@ export class ViewServer {
   private _baseUrl: string;
   private healthProvider?: HealthProvider;
   private wsChannel?: WebSocketChannel;
+  private onAction?: ActionHandler;
 
   constructor(config: ViewServerConfig = {}) {
     this.port = config.port ?? 8099;
     this._baseUrl = config.baseUrl ?? `http://localhost:${this.port}`;
     this.healthProvider = config.healthProvider;
     this.wsChannel = config.wsChannel;
+    this.onAction = config.onAction;
   }
 
   get baseUrl(): string {
     return this._baseUrl;
+  }
+
+  setActionHandler(handler: ActionHandler) {
+    this.onAction = handler;
   }
 
   start() {
@@ -70,9 +80,14 @@ export class ViewServer {
     return `${this._baseUrl}/view/${token}`;
   }
 
-  private handleRequest(req: Request): Response {
+  private async handleRequest(req: Request): Promise<Response> {
     const url = new URL(req.url);
     const path = url.pathname;
+
+    // Action endpoint
+    if (path === "/api/action" && req.method === "POST") {
+      return this.handleAction(req);
+    }
 
     // Health check
     if (path === "/health" || path === "/") {
@@ -104,6 +119,33 @@ export class ViewServer {
     }
 
     return new Response("Not found", { status: 404 });
+  }
+
+  private async handleAction(req: Request): Promise<Response> {
+    try {
+      const body = await req.json() as { viewId?: string; actionId?: string; label?: string };
+      if (!body.viewId || !body.actionId) {
+        return Response.json({ error: "Missing viewId or actionId" }, { status: 400 });
+      }
+
+      // Look up which session created this view
+      const index = loadViewIndex();
+      const view = index.find(v => v.slug === body.viewId);
+      if (!view?.channelId) {
+        return Response.json({ error: "View not found or no session to route to" }, { status: 404 });
+      }
+
+      if (!this.onAction) {
+        return Response.json({ error: "Action handler not configured" }, { status: 503 });
+      }
+
+      await this.onAction(view.channelId, body.actionId, body.label ?? body.actionId);
+      console.log(`[views] Action "${body.actionId}" from view ${body.viewId} → ${view.channelId}`);
+      return Response.json({ ok: true, message: `Action "${body.label ?? body.actionId}" sent` });
+    } catch (err: any) {
+      console.error(`[views] Action error: ${err.message}`);
+      return Response.json({ error: err.message }, { status: 500 });
+    }
   }
 
   /**
