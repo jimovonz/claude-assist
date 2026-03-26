@@ -60,8 +60,8 @@ switch (command) {
   }
 
   case "list": {
-    const enabledOnly = args.includes("--enabled");
-    output(listTasks(enabledOnly));
+    const all = args.includes("--all");
+    output(listTasks(!all));
     break;
   }
 
@@ -113,7 +113,7 @@ switch (command) {
   default:
     console.error(`Usage: task-cli <create|list|get|update|delete>
   create --name "..." --prompt "..." --user "12345" --schedule "0 9 * * *" | --run-at "2026-03-27T09:00:00" [--strategy resume|fresh] [--context-files '["path"]'] [--cwd "/path"] [--max-turns 5]
-  list [--enabled]
+  list [--all]
   get <id>
   update <id> [--name ...] [--enabled true|false] [--schedule ...] [--run-at ...] [--prompt ...]
   delete <id>`);
