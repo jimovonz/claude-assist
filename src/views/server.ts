@@ -11,7 +11,7 @@ export interface HealthProvider {
   activeSessionCount: number;
 }
 
-export type ActionHandler = (channelId: string, actionId: string, actionLabel: string) => Promise<void>;
+export type ActionHandler = (channelId: string, actionId: string, actionLabel: string, value?: string) => Promise<void>;
 
 export interface ViewServerConfig {
   port?: number;
@@ -123,7 +123,7 @@ export class ViewServer {
 
   private async handleAction(req: Request): Promise<Response> {
     try {
-      const body = await req.json() as { viewId?: string; actionId?: string; label?: string };
+      const body = await req.json() as { viewId?: string; actionId?: string; label?: string; value?: string };
       if (!body.viewId || !body.actionId) {
         return Response.json({ error: "Missing viewId or actionId" }, { status: 400 });
       }
@@ -139,7 +139,7 @@ export class ViewServer {
         return Response.json({ error: "Action handler not configured" }, { status: 503 });
       }
 
-      await this.onAction(view.channelId, body.actionId, body.label ?? body.actionId);
+      await this.onAction(view.channelId, body.actionId, body.label ?? body.actionId, body.value);
       console.log(`[views] Action "${body.actionId}" from view ${body.viewId} → ${view.channelId}`);
       return Response.json({ ok: true, message: `Action "${body.label ?? body.actionId}" sent` });
     } catch (err: any) {

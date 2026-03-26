@@ -18,9 +18,13 @@ describe("extractActions", () => {
     const input = 'Report\n<action id="ack">Acknowledge</action>\n<action id="snooze">Snooze 1h</action>\n<action id="fix">Run cleanup</action>';
     const { content, actions } = extractActions(input);
     expect(actions).toHaveLength(3);
-    expect(actions[0]).toEqual({ id: "ack", label: "Acknowledge" });
-    expect(actions[1]).toEqual({ id: "snooze", label: "Snooze 1h" });
-    expect(actions[2]).toEqual({ id: "fix", label: "Run cleanup" });
+    expect(actions[0].id).toBe("ack");
+    expect(actions[0].label).toBe("Acknowledge");
+    expect(actions[0].type).toBe("button");
+    expect(actions[1].id).toBe("snooze");
+    expect(actions[1].label).toBe("Snooze 1h");
+    expect(actions[2].id).toBe("fix");
+    expect(actions[2].label).toBe("Run cleanup");
     expect(content).not.toContain("<action");
   });
 
@@ -51,6 +55,53 @@ describe("extractActions", () => {
     expect(actions[0].id).toBe("spaced");
     expect(actions[0].label).toBe("Padded Label");
   });
+
+  test("extracts select type with options", () => {
+    const input = '<action id="priority" type="select">\n- Low\n- Medium\n- High\n</action>';
+    const { actions } = extractActions(input);
+    expect(actions).toHaveLength(1);
+    expect(actions[0].type).toBe("select");
+    expect(actions[0].options).toEqual(["Low", "Medium", "High"]);
+  });
+
+  test("extracts checkbox type with options", () => {
+    const input = '<action id="cleanup" type="checkbox">\n- Clean temp\n- Clear logs\n- Prune docker\n</action>';
+    const { actions } = extractActions(input);
+    expect(actions).toHaveLength(1);
+    expect(actions[0].type).toBe("checkbox");
+    expect(actions[0].options).toEqual(["Clean temp", "Clear logs", "Prune docker"]);
+  });
+
+  test("extracts text type with placeholder", () => {
+    const input = '<action id="note" type="text" placeholder="Add context...">Add note</action>';
+    const { actions } = extractActions(input);
+    expect(actions).toHaveLength(1);
+    expect(actions[0].type).toBe("text");
+    expect(actions[0].label).toBe("Add note");
+    expect(actions[0].placeholder).toBe("Add context...");
+  });
+
+  test("defaults to button type", () => {
+    const input = '<action id="ack">Acknowledge</action>';
+    const { actions } = extractActions(input);
+    expect(actions[0].type).toBe("button");
+  });
+
+  test("handles mixed action types", () => {
+    const input = `Report
+<action id="ack">OK</action>
+<action id="svc" type="select">
+- nginx
+- postgres
+</action>
+<action id="note" type="text" placeholder="Why?">Add reason</action>`;
+    const { actions } = extractActions(input);
+    expect(actions).toHaveLength(3);
+    expect(actions[0].type).toBe("button");
+    expect(actions[1].type).toBe("select");
+    expect(actions[1].options).toEqual(["nginx", "postgres"]);
+    expect(actions[2].type).toBe("text");
+  });
 });
 
 describe("stripMetadata handles action tags", () => {
@@ -67,6 +118,14 @@ describe("stripMetadata handles action tags", () => {
     const result = stripMetadata(input);
     expect(result).toContain("[Click]");
     expect(result).not.toContain("<memory>");
+  });
+
+  test("converts multi-line action tags to option list", () => {
+    const input = 'Choose:\n<action id="svc" type="select">\n- nginx\n- postgres\n</action>';
+    const result = stripMetadata(input);
+    expect(result).toContain("[nginx]");
+    expect(result).toContain("[postgres]");
+    expect(result).not.toContain("<action");
   });
 });
 
@@ -103,8 +162,8 @@ describe("action button rendering", () => {
     const { readFileSync } = require("fs");
     const { join } = require("path");
     const html = readFileSync(join(__dirname, "..", "views", `${slug}.html`), "utf-8");
+    // No action bar rendered (JS scaffolding is still present but no buttons)
     expect(html).not.toContain('id="action-bar"');
-    expect(html).not.toContain("data-action-id");
 
     const { unlinkSync } = require("fs");
     try { unlinkSync(join(__dirname, "..", "views", `${slug}.html`)); } catch {}

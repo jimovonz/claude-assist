@@ -66,8 +66,9 @@ async function start() {
   router.addChannel(wsChannel);
 
   // Wire view action handler — routes button clicks back to sessions
-  viewServer.setActionHandler(async (channelId, actionId, actionLabel) => {
-    const message = `[User clicked "${actionLabel}" (action: ${actionId}) on the view]`;
+  viewServer.setActionHandler(async (channelId, actionId, actionLabel, value) => {
+    const valueInfo = value && value !== actionLabel ? ` Value: "${value}"` : "";
+    const message = `[User selected "${actionLabel}" (action: ${actionId}) on the view.${valueInfo}]`;
     for await (const event of sessionManager.sendMessage(channelId, message, { channelId })) {
       if (event.type === "result" && event.text) {
         const parts = channelId.split(":");

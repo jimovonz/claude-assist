@@ -15,7 +15,15 @@ export function stripMetadata(text: string): string {
     .replace(/<cairn_context[\s\S]*?<\/cairn_context>/g, "")
     .replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "")
     .replace(/<notify>\s*(true|false)\s*<\/notify>\s*/gi, "")
-    .replace(/<action\s+id="[^"]*"(?:\s+[^>]*)?>([^<]+)<\/action>/gi, "[$1]")
+    .replace(/<action\s+id="[^"]*"(?:\s+[^>]*)?>([\s\S]*?)<\/action>/gi, (_, body) => {
+      const trimmed = body.trim();
+      // For multi-line (select/checkbox), show options as list
+      if (trimmed.includes("\n")) {
+        const opts = trimmed.split("\n").map((l: string) => l.replace(/^[-*]\s*/, "").trim()).filter((l: string) => l);
+        return opts.map((o: string) => `[${o}]`).join(" ");
+      }
+      return `[${trimmed}]`;
+    })
     .replace(/^Sources:\n(- \[.*?\]\(.*?\)\n?)*/gm, "")
     .trim();
 }

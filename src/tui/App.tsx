@@ -157,8 +157,30 @@ export function App({ host, token }: AppProps) {
       // Append action choices to the text
       let displayText = text;
       if (actions?.length) {
-        const actionLines = actions.map((a, i) => `  [${i + 1}] ${a.label}`).join("\n");
-        displayText += `\n\n  Actions:\n${actionLines}`;
+        const lines: string[] = ["\n  Actions:"];
+        let idx = 1;
+        for (const a of actions) {
+          if (a.type === "button" || !a.type) {
+            lines.push(`  [${idx}] ${a.label}`);
+            idx++;
+          } else if (a.type === "select" && a.options) {
+            lines.push(`  ${a.id} (pick one):`);
+            for (const opt of a.options) {
+              lines.push(`    [${idx}] ${opt}`);
+              idx++;
+            }
+          } else if (a.type === "checkbox" && a.options) {
+            lines.push(`  ${a.id} (comma-separate numbers):`);
+            for (const opt of a.options) {
+              lines.push(`    [${idx}] ${opt}`);
+              idx++;
+            }
+          } else if (a.type === "text") {
+            lines.push(`  [${idx}] ${a.label} (type response)`);
+            idx++;
+          }
+        }
+        displayText += lines.join("\n");
         setCurrentActions(actions);
       } else {
         setCurrentActions(null);
