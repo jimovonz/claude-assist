@@ -12,11 +12,13 @@
 
 import type { Channel } from "../conduit/router";
 import type { SessionManager } from "../conduit/session";
+import type { ActionHandler } from "../views/server";
 
 export interface EdgeRelayConfig {
   edgeUrl: string;
   apiSecret?: string;
   sessionManager?: SessionManager;
+  onAction?: ActionHandler;
 }
 
 export class EdgeRelay implements Channel {
@@ -32,13 +34,14 @@ export class EdgeRelay implements Channel {
   private reconnectTimer: Timer | null = null;
   private stopped = false;
   private reconnectDelay = 1000;
+  private onAction?: ActionHandler;
 
   constructor(config: EdgeRelayConfig) {
     this.edgeUrl = config.edgeUrl;
-    // Convert http(s) URL to ws(s) URL
     this.wsUrl = config.edgeUrl.replace(/^http/, "ws") + "/ws/conduit";
     this.apiSecret = config.apiSecret;
     this.sessionManager = config.sessionManager;
+    this.onAction = config.onAction;
   }
 
   async start(onMessage: (userId: string, text: string) => void) {
@@ -102,6 +105,12 @@ export class EdgeRelay implements Channel {
   }
 
   private handleEdgeMessage(data: any) {
+    // Action messages don't have userId — they have viewId
+    if (data.type === "action") {
+      this.handleActionMessage(data);
+      return;
+    }
+
     const userId = data.userId;
     if (!userId) return;
 
@@ -157,6 +166,27 @@ export class EdgeRelay implements Channel {
       default:
         this.send(userId, { type: "error", text: `Unknown command: ${command}` });
     }
+  }
+
+  private async handleActionMessage(data: any) {
+    if (!this.onAction) {
+      console.log("[edge-relay] Action received but no handler configured");
+      return;
+    }
+    const { viewId, actionId, label, value } = data;
+    if (!viewId || !actionId) return;
+
+    // Look up channelId from view index
+    const { loadViewIndex } = await import("../views/renderer");
+    const index = loadViewIndex();
+    const view = index.find((v: any) => v.slug === viewId);
+    if (!view?.channelId) {
+      console.log(`[edge-relay] Action for unknown view: ${viewId}`);
+      return;
+    }
+
+    console.log(`[edge-relay] Action "${actionId}" from view ${viewId} → ${view.channelId}`);
+    await this.onAction(view.channelId, actionId, label ?? actionId, value);
   }
 
   // --- Channel interface ---

@@ -65,8 +65,8 @@ async function start() {
   router.addChannel(telegram);
   router.addChannel(wsChannel);
 
-  // Wire view action handler — routes button clicks back to sessions
-  viewServer.setActionHandler(async (channelId, actionId, actionLabel, value) => {
+  // Shared action handler — routes view button clicks back to sessions
+  const handleAction = async (channelId: string, actionId: string, actionLabel: string, value?: string) => {
     const valueInfo = value && value !== actionLabel ? ` Value: "${value}"` : "";
     const message = `[User selected "${actionLabel}" (action: ${actionId}) on the view.${valueInfo}]`;
     for await (const event of sessionManager.sendMessage(channelId, message, { channelId })) {
@@ -81,7 +81,8 @@ async function start() {
         }
       }
     }
-  });
+  };
+  viewServer.setActionHandler(handleAction);
 
   // Edge relay for remote TUI access via GCE
   let edgeRelay: EdgeRelay | null = null;
@@ -90,6 +91,7 @@ async function start() {
       edgeUrl,
       apiSecret: process.env.EDGE_API_SECRET,
       sessionManager,
+      onAction: handleAction,
     });
     router.addChannel(edgeRelay);
   }
