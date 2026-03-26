@@ -18,7 +18,7 @@ from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 
 TOKEN_PATH = Path.home() / ".config" / "google" / "token.json"
-TOPIC = "projects/GCP_PROJECT_ID/topics/gmail-notifications"
+TOPIC = os.environ.get("GMAIL_PUBSUB_TOPIC", "projects/GCP_PROJECT_ID/topics/gmail-notifications")
 STATE_PATH = Path.home() / ".local" / "state" / "claude-assist" / "gmail-watch.json"
 
 

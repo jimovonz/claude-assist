@@ -69,7 +69,7 @@ The SDK was considered initially but `claude -p` is simpler, more stable, and gi
 
 ### Session isolation
 
-Each channel gets its own `channelId` (e.g. `telegram:TELEGRAM_USER_ID`, `tui:user-abc123`, `task:heartbeat`). Sessions persist across restarts via SQLite. The Router dispatches uniformly — channel-specific behaviour lives in each channel's connector.
+Each channel gets its own `channelId` (e.g. `telegram:<user_id>`, `tui:user-abc123`, `task:heartbeat`). Sessions persist across restarts via SQLite. The Router dispatches uniformly — channel-specific behaviour lives in each channel's connector.
 
 ### Centralized commands
 
@@ -147,7 +147,7 @@ Views support `<action>` tags (button, select, checkbox, text) rendered as inter
 
 ## GCE Edge Server
 
-Python/aiohttp on `conduit.alimento.co.nz` (GCE_IP_ADDRESS), Apache reverse proxy with Let's Encrypt SSL.
+Python/aiohttp on the GCE edge server, Apache reverse proxy with Let's Encrypt SSL.
 
 Endpoints:
 - `POST /api/views` — receive and store HTML views from conduit

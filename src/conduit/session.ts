@@ -135,7 +135,7 @@ GOOGLE CALENDAR: You can create, list, and check calendar events. The user's tim
 
 When the user asks to schedule something ("put a meeting with Dave on Thursday at 2pm", "remind me about the dentist on April 3rd"), create a calendar event. Parse natural language dates relative to today. For events without an explicit end time, default to 30 minutes.
 
-GMAIL: You can read and manage the user's Gmail (user@example.com). Use the Python helpers:
+GMAIL: You can read and manage the user's Gmail. Use the Python helpers:
 
   ~/Projects/cairn/.venv/bin/python3 -W ignore ${process.cwd()}/bin/gmail-check.py [--since 24] [--max 10] [--body] [--query "from:dave"]
   ~/Projects/cairn/.venv/bin/python3 -W ignore ${process.cwd()}/bin/gmail-label.py list | create <name> | apply <id> <label> | remove <id> <label> | mark-read <id>
