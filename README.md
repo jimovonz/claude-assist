@@ -41,6 +41,7 @@ Paired with [Cairn](https://github.com/jimovonz/cairn), every conversation acros
 - **Cairn memory** — proactive context injection via prompt hook, memory storage via stop hook. Cross-session, cross-channel.
 - **Streaming status** — Telegram shows what Claude is doing in real time (reading files, running commands, thinking). Edits one message in place, 5s throttle.
 - **Rich HTML views** — long responses rendered as styled pages served via Cloudflare Tunnel. Syntax highlighting, diffs, structured content.
+- **Scheduled tasks** — cron and one-shot scheduling with per-task model selection, LLM-controlled notifications (`auto` mode — Claude decides whether to alert), context files, Cairn memory queries, session strategies (fresh/resume), and reply-to routing. Create tasks naturally ("check my server every 15 minutes") or via CLI.
 - **Session isolation** — each channel gets its own conversation context. Telegram chat doesn't bleed into web CLI work.
 - **Message queuing** — rapid messages are queued per channel, preventing concurrent session corruption.
 
@@ -92,9 +93,12 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full architectural breakdown, des
 
 | Component | File | Purpose |
 |-----------|------|---------|
-| **Session Manager** | `src/conduit/session.ts` | Persistent `claude -p` processes per channel, stream-json I/O |
-| **Router** | `src/conduit/router.ts` | Channel routing, Cairn hook integration, status streaming, view creation |
-| **Telegram** | `src/conduit/channels/telegram/` | Grammy bot, status edits, typing indicator, message queuing |
+| **Session Manager** | `src/conduit/session.ts` | Persistent `claude -p` processes per channel, stream-json I/O, per-session model selection |
+| **Router** | `src/conduit/router.ts` | Channel routing, Cairn hook integration, status streaming, view creation, centralized commands |
+| **Scheduler** | `src/conduit/scheduler.ts` | Cron + one-shot task scheduling, LLM-controlled notifications, context injection |
+| **Commands** | `src/conduit/commands.ts` | Centralized `/tasks`, `/task`, `/clear`, `/context`, `/sessions`, `/help` |
+| **Task CLI** | `bin/task-cli.ts` | CLI for Claude subprocess to create/manage scheduled tasks |
+| **Telegram** | `src/conduit/channels/telegram/` | Grammy bot, status edits, typing indicator, task reply routing |
 | **WebSocket/TUI** | `src/conduit/channels/websocket/` | WebSocket channel for local and remote TUI clients |
 | **Edge Relay** | `src/service/edge-relay.ts` | Outbound WebSocket to GCE edge for NAT-friendly remote TUI access |
 | **Hooks** | `src/conduit/hooks.ts` | Cairn prompt/stop hook runners |
@@ -115,7 +119,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full architectural breakdown, des
 Functional multi-channel assistant with Telegram, TUI, remote TUI access, and HTML views.
 
 **Done:**
-- [x] Telegram channel with status streaming, message chunking, and commands (`/clear`, `/views`, `/context`)
+- [x] Telegram channel with status streaming, message chunking, and commands
 - [x] WebSocket/TUI channel with auth, streaming, and session restore
 - [x] Remote TUI access via GCE edge relay (NAT-friendly outbound WebSocket)
 - [x] Cloudflare Tunnel integration (named or quick)
@@ -123,11 +127,13 @@ Functional multi-channel assistant with Telegram, TUI, remote TUI access, and HT
 - [x] Session persistence across restarts (SQLite)
 - [x] HTML view rendering with edge push and Telegram Mini App support
 - [x] Cairn memory integration (prompt and stop hooks)
+- [x] Scheduled agent tasks — cron, one-shot, per-task model, LLM-controlled notifications, context files/queries, reply-to routing
+- [x] Centralized commands (`/tasks`, `/task`, `/clear`, `/context`, `/sessions`, `/help`) across all channels
 
 **Planned:**
-- [ ] Scheduled agent tasks (cron) with Google API integration
+- [ ] Email triage agent with Google Calendar integration
 - [ ] Web CLI channel (browser-based terminal)
-- [ ] Telegram Mini Apps for interactive two-way content
+- [ ] Telegram Mini Apps for interactive two-way content (actionable buttons on task output)
 
 ## License
 
