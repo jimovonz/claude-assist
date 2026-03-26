@@ -1,303 +1,183 @@
-# claude-assist — Design Document
+# claude-assist — Architecture
+
+> **Note:** This is a personal project in active development. The architecture below reflects the current implementation, not a stable public API.
 
 ## Overview
 
-claude-assist extends Claude Code to provide a personal AI assistant accessible from any device, any channel, with persistent memory and rich interaction capabilities — similar to [OpenClaw](https://openclaw.ai/) but built on Claude Code's existing ecosystem.
-
-Two core components:
-
-- **Cairn** — persistent semantic memory (operational)
-- **Conduit** — Conduit and channel router (to build)
-
-This document captures the architectural decisions and planned work.
-
-## Goals
-
-- Access Claude Code from **any device** (phone, laptop, desktop)
-- Interact via **multiple channels** — Telegram, web browser, remote CLI — each with its own isolated conversation context
-- Provide **rich output** via interactive web views (Telegram Mini Apps, Cloudflare Tunnel-hosted pages)
-- Maintain **persistent memory** across all sessions and channels via Cairn
-- Run **autonomously** as an always-on service
-- **Easy to distribute** — anyone should be able to deploy their own instance with minimal configuration
+claude-assist is a multi-channel AI assistant built on Claude Code. It wraps persistent `claude -p` subprocesses in a routing layer (the **Conduit**) that connects Telegram, a terminal TUI, and a remote TUI via a GCE edge server. Paired with [Cairn](https://github.com/jimovonz/cairn) for persistent semantic memory, it provides a unified assistant accessible from any device.
 
 ## Architecture
 
-claude-assist is a **single Bun process** (the Conduit) that owns all channel connections and uses the `@anthropic-ai/claude-code` SDK as the backend. It does **not** use Claude Code's `--channels` MCP system.
-
 ```
-┌──────────────────────────────────────────────────────────┐
-│              Conduit (Bun)                        │
-│              One process, one systemd service             │
-│                                                          │
-│  ┌─────────────────────────────────────────────────┐     │
-│  │              Channel Connectors                  │     │
-│  ├──────────┬──────────┬──────────┬───────────────┤     │
-│  │ Telegram │ Web CLI  │ Remote   │  Future       │     │
-│  │ Bot API  │ WebSocket│ CLI      │  (Slack,etc)  │     │
-│  └────┬─────┴────┬─────┴────┬─────┴───────┬──────┘     │
-│       │          │          │             │              │
-│  ┌────┴──────────┴──────────┴─────────────┴────────┐    │
-│  │              Session Router                      │    │
-│  │  channelId → sessionId mapping                   │    │
-│  │  Per-channel isolated Claude Code sessions       │    │
-│  └────┬─────────────────────────────────────┬──────┘    │
-│       │                                     │            │
-│  ┌────┴──────────┐              ┌───────────┴────────┐  │
-│  │ Claude Code   │              │ Claude Code        │  │
-│  │ SDK session   │  ...         │ SDK session        │  │
-│  │ (Telegram)    │              │ (Web CLI)          │  │
-│  └───────────────┘              └────────────────────┘  │
-│                                                          │
-│  ┌──────────┐  ┌──────────┐  ┌────────────────────┐    │
-│  │  Cairn   │  │  View    │  │  cloudflared       │    │
-│  │  Memory  │  │  Renderer│  │  (tunnel)           │    │
-│  └──────────┘  └──────────┘  └────────────────────┘    │
-└──────────────────────────────────────────────────────────┘
-       ↕              ↕              ↕
-  Telegram        Browser        Terminal
- (any device)   (any device)   (any machine)
-```
-
-### Why not `--channels`?
-
-Claude Code's `--channels` MCP system ties channel connections to a single Claude Code process with shared conversation context. This means:
-
-- All channels share one context (Telegram chat about dinner bleeds into Web CLI code work)
-- Only one process can poll a Telegram bot at a time
-- Adding channels requires restarting the Claude session
-
-By using the SDK directly, the Conduit:
-
-- Maintains **separate sessions per channel** with isolated contexts
-- Owns all channel connections in one process
-- Can spawn/suspend sessions on demand
-- Routes tool approval requests back through the originating channel
-- Streams responses in real-time via the SDK's async iterator
-
-### Core SDK usage
-
-```typescript
-import { query } from "@anthropic-ai/claude-code";
-
-// Per-channel session management
-for await (const msg of query({
-  prompt: userMessage,
-  options: {
-    resume: sessionId,          // multi-turn per channel
-    allowedTools: [...],        // auto-approve safe tools
-    canUseTool: (tool) => {     // route approvals to user's channel
-      return channel.askApproval(userId, tool);
-    }
-  }
-})) {
-  if (msg.type === "assistant") {
-    channel.reply(userId, msg.content);
-  }
-  if (msg.type === "result") {
-    sessions.set(channelId, msg.session_id);
-  }
-}
+┌──────────────────────────────────────────────────────┐
+│                   Conduit (Bun)                       │
+│               Single process, systemd service         │
+│                                                       │
+│  ┌──────────────────────────────────────────────┐    │
+│  │              Channel Connectors               │    │
+│  ├──────────┬─────────┬─────────────────────────┤    │
+│  │ Telegram │ TUI/WS  │ Remote TUI (EdgeRelay)  │    │
+│  │ Grammy   │ Bun.serve│ Outbound WSS to GCE    │    │
+│  └────┬─────┴────┬────┴────────────┬────────────┘    │
+│       │          │                 │                   │
+│  ┌────┴──────────┴─────────────────┴─────────────┐   │
+│  │              Router                            │   │
+│  │  channelId → session mapping                   │   │
+│  │  Command interception (/tasks, /clear, etc.)   │   │
+│  │  Cairn hook orchestration                      │   │
+│  │  View creation + action routing                │   │
+│  └────┬──────────────────────────────────────────┘   │
+│       │                                               │
+│  ┌────┴──────────┐  ┌────────────────────────────┐   │
+│  │ Session Mgr   │  │ Scheduler                  │   │
+│  │ claude -p     │  │ 30s tick, cron + one-shot   │   │
+│  │ stream-json   │  │ Per-task model, notify ctrl │   │
+│  │ Per-channel   │  │ Context files + Cairn query │   │
+│  └───────────────┘  └────────────────────────────┘   │
+│                                                       │
+│  ┌───────────────┐  ┌────────────────────────────┐   │
+│  │ Email Agent   │  │ View Server                │   │
+│  │ Gmail push    │  │ HTML views + action API    │   │
+│  │ Classify/label│  │ Bun.serve on :8099         │   │
+│  │ Calendar evts │  │ /api/action POST-back      │   │
+│  └───────────────┘  └────────────────────────────┘   │
+│                                                       │
+│  ┌───────────────┐  ┌────────────────────────────┐   │
+│  │ Cairn Hooks   │  │ State (SQLite)             │   │
+│  │ Prompt + Stop │  │ Sessions, tasks, history   │   │
+│  └───────────────┘  └────────────────────────────┘   │
+└──────────────────────────────────────────────────────┘
+         ↕                    ↕                ↕
+    Telegram             GCE Edge          Gmail Pub/Sub
+   (any device)      (conduit.alimento     (push webhook)
+                       .co.nz HTTPS)
 ```
 
-## Channel Tiers
+## Key Design Decisions
 
-Each channel gets its own Claude Code session with isolated conversation context. Cairn memory is shared across all sessions.
+### Why `claude -p` instead of Claude Code SDK?
 
-| Channel | When to use | Strengths |
-|---------|-------------|-----------|
-| **Telegram** | Phone, quick tasks, on the go | Reactions for approvals, links to web views for detail |
-| **Web CLI** | Browser, want rich rendering | HTML diffs, interactive forms, clickable elements, mobile-responsive |
-| **Remote CLI** | At a terminal, want full speed | Native ANSI rendering, fast typing, familiar CLI feel |
+The Conduit spawns Claude as a persistent subprocess using `claude -p --input-format stream-json --output-format stream-json`. This gives:
 
-## Key Components
+- Full Claude Code tool access (Bash, Read, Write, etc.)
+- `--resume` for session continuity across messages
+- `--append-system-prompt` for injecting Conduit-specific instructions
+- `--model` for per-session/per-task model selection
+- `--permission-mode bypassPermissions` for autonomous operation
 
-### 1. Conduit (core — operational)
+The SDK was considered initially but `claude -p` is simpler, more stable, and gives identical capabilities.
 
-The central process that orchestrates everything.
+### Session isolation
 
-- Single Bun process, runs as a systemd user service
-- Owns all channel connections directly (Telegram Bot API, WebSocket, etc.)
-- Spawns per-channel Claude Code SDK sessions
-- Routes messages and tool approval requests
-- Manages session lifecycle (spawn, suspend on idle, resume on message)
-- Commands: `/sessions`, `/switch`, `/new`, `/kill`
+Each channel gets its own `channelId` (e.g. `telegram:TELEGRAM_USER_ID`, `tui:user-abc123`, `task:heartbeat`). Sessions persist across restarts via SQLite. The Router dispatches uniformly — channel-specific behaviour lives in each channel's connector.
 
-### 2. Cairn (operational)
+### Centralized commands
 
-Persistent semantic memory system stored in SQLite with embeddings.
+Commands (`/tasks`, `/task`, `/clear`, `/context`, `/sessions`, `/help`) are handled in `commands.ts` before reaching Claude. All channels share the same command set — no duplication.
 
-- Stop hook parses `<memory>` blocks from every Claude response
-- Deduplication via cosine similarity (threshold 0.85)
-- Confidence scoring with feedback loop
-- Semantic search, full-text search, project/session scoping
-- Shared across all channels and sessions
+### LLM-controlled notifications
 
-### 3. Telegram Connector
+Scheduled tasks support `notify: auto` mode where Claude decides whether the user should be notified by including a `<notify>true|false</notify>` tag. The scheduler respects this — healthy heartbeat checks stay silent, problems trigger alerts. Manual triggers (`/task <id> run`) always notify.
 
-Direct integration with the Telegram Bot API (not the MCP plugin).
+### Email agent — push not poll
 
-- Polls bot API for incoming messages
-- Routes to per-user, per-channel SDK sessions
-- Sends responses back via Bot API
-- Sender allowlist for access control
-- Telegram Mini Apps for rich interactive content (forms, selections, approvals)
+Gmail push notifications via Google Pub/Sub arrive at the GCE edge server within seconds of inbox changes. The edge forwards via WebSocket to the conduit's EdgeRelay, which triggers the EmailAgent. This avoids the latency and cost of polling. Watch registration auto-renews every 3 days via a scheduled task.
 
-### 4. Web CLI (planned)
+### Interactive HTML views
 
-A browser-based CLI interface served via Cloudflare Tunnel.
+Views support `<action>` tags (button, select, checkbox, text) rendered as interactive forms in HTML. A single Submit collects all inputs and POSTs to `/api/action`. Actions route back to the originating session via `channelId` stored in the view index. TUI/CLI renders actions as numbered choices. The GCE edge server proxies action requests back to the conduit.
 
-- HTML + JS web application with CLI-style input/output
-- WebSocket connection to the Conduit
-- Rich output rendering (syntax-highlighted diffs, collapsible tool cards, forms)
-- Session tabs — view and switch between active sessions
-- Mobile-responsive layout
+## Components
 
-### 5. Remote CLI (operational via edge relay)
+### Conduit Core (`src/conduit/`)
 
-A thin CLI client that connects from any machine to the Conduit.
+| File | Purpose |
+|------|---------|
+| `router.ts` | Channel interface, message queuing, command interception, view creation, Cairn hooks |
+| `session.ts` | SessionManager — spawns/manages persistent `claude -p` processes, resume, abort, model selection |
+| `state.ts` | SQLite persistence — sessions, scheduled tasks (CRUD, slug IDs, all fields) |
+| `scheduler.ts` | TaskScheduler — 30s tick, cron parser, one-shot (runAt), fireTask, notify resolution |
+| `commands.ts` | Central `/tasks`, `/task`, `/clear`, `/context`, `/sessions`, `/help` handler |
+| `email-agent.ts` | EmailAgent — Gmail push processing, classification, labeling, calendar events |
+| `hooks.ts` | Cairn prompt/stop hook subprocess runners |
+| `index.ts` | Public exports |
 
-- Single binary (Bun/Go/Rust) for cross-platform use
-- WebSocket connection to the Conduit via Cloudflare Tunnel
-- Local readline prompt with ANSI-rendered output
-- Usage: `claude-remote`
+### Channels (`src/conduit/channels/`)
 
-### 6. Interactive Web View Renderer (operational)
+| Channel | Transport | Features |
+|---------|-----------|----------|
+| Telegram | Grammy bot, long-polling | Status edits (5s throttle), typing indicator, reply-to task routing, `sendTaskResult` with HTML views, `/views` command |
+| WebSocket/TUI | Bun.serve WebSocket | Streaming text, action extraction, session restore greeting, cancel support |
+| Edge Relay | Outbound WSS to GCE | TUI bridging, action proxy, Gmail push forwarding |
 
-Generates rich HTML pages for content that exceeds Telegram/CLI capabilities.
+### Services (`src/service/`)
 
-- Renders diffs (diff2html, side-by-side or unified)
-- Syntax-highlighted code with line numbers
-- Test output with pass/fail coloring
-- Interactive elements: per-hunk approve/reject, option selection, form inputs, file trees
-- Two-way: user actions flow back to Claude via WebSocket
-- Can be served as Telegram Mini Apps (inline in Telegram) or standalone via Cloudflare Tunnel
-- Token-based URLs with TTL expiry
+| File | Purpose |
+|------|---------|
+| `edge-relay.ts` | Channel interface over WebSocket to GCE edge (handles TUI, actions, Gmail push) |
+| `tunnel.ts` | Cloudflare Tunnel management (legacy, optional) |
+| `watchdog.ts` | systemd watchdog via FFI |
+| `systemd.ts` | Service unit generation, install, status, logs |
 
-### 7. Cloudflare Tunnel
+### Views (`src/views/`)
 
-Exposes the Web CLI and view renderer to the internet without port forwarding.
+| File | Purpose |
+|------|---------|
+| `renderer.ts` | Markdown → HTML, action tag extraction, view creation, edge push |
+| `server.ts` | Bun.serve for views, `/api/action` endpoint, health, WebSocket upgrade |
 
-- `cloudflared` runs as a child process of the Conduit (or separate systemd service)
-- Free HTTPS with persistent subdomain
-- No inbound ports, works behind any NAT/firewall
-- Distributable — user just needs a free Cloudflare account and a domain
+### Python Helpers (`bin/`)
 
-## Deployment
+| Script | Purpose |
+|--------|---------|
+| `gmail-check.py` | List/read emails (--since, --body, --query, --id) |
+| `gmail-label.py` | Create/apply/remove labels, mark read |
+| `gmail-send.py` | Send email (with reply-to threading) |
+| `gmail-watch.py` | Register/renew/stop Gmail push notifications |
+| `gcal.py` | Calendar CRUD (create, list, today, free slots) |
+| `task-cli.ts` | Scheduled task management (create, list, get, update, delete) |
 
-### For Claude Code users (primary distribution path)
+### Configuration Files
 
-```bash
-npm install -g claude-assist     # or: git clone + bun install
+| File | Purpose |
+|------|---------|
+| `email-agent.md` | Email classification rules, label taxonomy, notification criteria, calendar event rules |
+| `HEARTBEAT.md` | Heartbeat checklist — what to monitor, thresholds, reporting format |
+| `.env` | Telegram token, edge URL, secrets |
 
-claude-assist init
-# → prompts for Telegram bot token
-# → prompts for Cloudflare tunnel token (optional)
-# → configures Cairn hooks
-# → creates systemd user service
+## GCE Edge Server
 
-claude-assist start              # starts the Conduit
-```
+Python/aiohttp on `conduit.alimento.co.nz` (GCE_IP_ADDRESS), Apache reverse proxy with Let's Encrypt SSL.
 
-Target audience already has Claude Code installed (Bun, claude.ai login). No Docker needed.
+Endpoints:
+- `POST /api/views` — receive and store HTML views from conduit
+- `GET /view/<id>` — serve HTML views (Telegram Mini Apps, direct links)
+- `POST /api/action` — proxy action button clicks to conduit via WebSocket
+- `POST /api/gmail-push` — receive Gmail Pub/Sub notifications, forward to conduit
+- `GET /ws/conduit` — conduit upstream WebSocket (authenticated)
+- `GET /ws/tui` — TUI client downstream WebSocket
+- `GET /health` — status, view count, connection state
 
-### Authentication
+## State & Persistence
 
-Uses **claude.ai subscription only** (no Anthropic API keys). The SDK authenticates via the existing claude.ai OAuth credentials. One-time browser login required; credentials persist across restarts.
+- **Sessions**: SQLite in `~/.local/state/claude-assist/conduit.db` — channelId, sessionId, lastActivity
+- **Tasks**: Same SQLite DB — slug IDs, schedules, prompts, model, notify, contextFiles, contextQuery, runAt, lastRun
+- **Gmail watch**: `~/.local/state/claude-assist/gmail-watch.json` — historyId, expiration
+- **Gmail history**: `~/.local/state/claude-assist/gmail-history-id.txt` — last processed historyId
+- **Views**: `views/index.json` — slug, title, URL, channelId (for action routing), capped at 100
+- **Google OAuth**: `~/.config/google/token.json` + `credentials.json`
 
-### Configuration
+## Test Coverage
 
-```bash
-# .env
-TELEGRAM_BOT_TOKEN=...          # from BotFather
-CLOUDFLARE_TUNNEL_TOKEN=...     # optional, for web UI exposure
-```
-
-## Multi-User Support
-
-Multiple users share one claude-assist instance on a single Claude subscription (e.g. Claude Max).
-
-- Session manager spawns on-demand Claude SDK sessions per user per channel
-- Idle sessions are suspended and resumed on next message
-- Each user has isolated conversation context
-- Cairn memory can be scoped per user
-- Access controlled via Telegram allowlist and web UI authentication
-- Rate limits are shared across all users (subscription constraint)
-
-## Security Considerations
-
-### Access control
-- Telegram sender allowlist (paired users only)
-- Web UI authentication (session tokens or Cloudflare Access)
-- Token-based view URLs (unguessable, short-lived)
-
-### Network
-- Cloudflare Tunnel — no exposed ports, automatic HTTPS
-- No inbound connections required
-
-### Tool execution
-- `canUseTool` callback routes approval requests to the user via their channel
-- `allowedTools` for auto-approving safe operations
-- Full Claude Code permission model applies per session
-
-## Comparison: OpenClaw vs claude-assist
-
-| Capability | OpenClaw | claude-assist |
-|-----------|----------|---------------|
-| Messaging channels | 20+ platforms | Telegram + Web + CLI (extensible) |
-| Memory | Flat Markdown files | Cairn (semantic, confidence-scored, embedded) |
-| Always-on | Built-in daemon | systemd service |
-| Skill ecosystem | 2,800+ ClawHub | Claude Code skills + MCP ecosystem |
-| Scheduled tasks | Built-in cron | Cron integration (planned) |
-| Rich UI | None (chat only) | Interactive web views + Telegram Mini Apps |
-| Model support | Any LLM | Claude only |
-| Security | Sandboxed execution | Allowlist + tool approval callbacks |
-| Multi-device | Via messaging platforms | Telegram + Web + CLI, all isolated sessions |
-| Distribution | Docker/self-host | npm package for Claude Code users |
-
-## Implementation Phases
-
-### Phase 1: Conduit + Telegram
-- Build Conduit core (Bun, Claude Code SDK integration)
-- Telegram Bot API connector with allowlist auth
-- Per-channel session isolation with resume
-- Tool approval routing via Telegram
-- `claude-assist init` and `claude-assist start` CLI
-- systemd user service for always-on
-
-### Phase 2: Web CLI + Cloudflare Tunnel
-- Web CLI channel (HTML/JS + WebSocket)
-- Cloudflare Tunnel integration for HTTPS exposure
-- Session tabs in browser
-- Rich output rendering (diffs, code, test results)
-
-### Phase 3: Interactive Web Views
-- View renderer with HTML templates
-- Interactive elements (approve/reject, selection, forms)
-- Telegram Mini Apps integration
-- Two-way communication from browser back to Conduit
-
-### Phase 4: Remote CLI
-- Thin CLI client binary
-- WebSocket transport via Cloudflare Tunnel
-- ANSI terminal rendering
-- Cross-platform distribution
-
-### Phase 5: Refinement
-- Scheduled tasks via cron
-- Additional channel connectors (Slack, Discord, email, webhooks)
-- Multi-user session management
-- Dashboard for monitoring and configuration
-
-## Lessons Learned
-
-### Channel message bias (critical)
-
-During testing, Claude responded to identical questions differently depending on whether they arrived via Telegram (`<channel>` tag) or the terminal. Telegram messages received more restrictive, dismissive responses — not because of any instruction, but as an emergent bias from the channel metadata framing.
-
-**Mitigation**: Global CLAUDE.md instructions explicitly state that channel messages must receive identical quality responses. The only permitted difference is formatting for the display medium. This is documented in `~/.claude/CLAUDE.md` under "Channel Messages".
-
-### Setup gotchas (for reference)
-
-- Bun installs to `~/.bun/bin` but MCP subprocesses don't source `.bashrc` — symlink to `~/.local/bin/`
-- The Telegram plugin requires `bun install` in the plugin cache directory — `/plugin install` doesn't do this automatically
-- `--channels` requires the full server name: `plugin:telegram@claude-plugins-official`
+486 tests across 24 files covering:
+- Cron parser (wildcards, steps, ranges, commas, day-of-week)
+- Task CRUD (slug IDs, dedup, all fields, one-shot, notify/model/skipCairn/contextQuery)
+- Scheduler integration (tick, fire, strategies, notify modes, force-notify, auto-disable, model passing)
+- Command handler (all commands, edge cases, isCommand validation)
+- Email agent (action parsing, notification extraction, configuration, script structure, context file)
+- Interactive views (action extraction, types, HTML rendering, stripMetadata, form output)
+- Router (message flow, hooks, views, metadata stripping, error handling)
+- Sessions (spawn, resume, abort, parsing, persistence)
+- Telegram (throttling, chunking, status)
+- WebSocket (auth, reconnect, commands)
+- Views (renderer, XSS, index management)

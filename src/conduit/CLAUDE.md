@@ -23,12 +23,12 @@ Gmail push notifications via Google Pub/Sub → GCE edge webhook → EdgeRelay �
 
 All channels have access to Gmail and Calendar via Python helpers in `bin/`. The system prompt documents these so Claude can read/send email, create calendar events, and check schedules from any conversation. OAuth token shared across all usage.
 
-### HTML Views
+### HTML Views & Interactive Actions
 
-When generating complex output — tables, code with syntax highlighting, structured layouts, diffs, diagrams — consider whether it would be better served as an HTML view. The view pipeline (`src/views/renderer.ts`) renders markdown to styled HTML and pushes it to the GCE edge server at `conduit.alimento.co.nz/view/<id>`.
+The view pipeline (`src/views/renderer.ts`) renders markdown to styled HTML and pushes to the GCE edge server at `conduit.alimento.co.nz/view/<id>`. Auto-triggers for responses >500 chars or with 2+ code blocks.
 
-The pipeline auto-triggers for responses >500 chars or with 2+ code blocks (`shouldCreateView`), but you should actively structure output to leverage rich HTML when the medium is better suited than plain text.
+Views support interactive `<action>` tags — buttons, radio select, checkboxes, and text input. Actions POST to `/api/action` (local or via edge proxy), route back to the originating session. TUI/CLI renders actions as numbered choices. Plain text fallback shows bracketed labels. Single-submit form pattern — form disables after submission.
 
 ### Edge Relay
 
-`src/service/edge-relay.ts` implements the Channel interface over an outbound WebSocket to the GCE edge server. The conduit initiates the connection (NAT-friendly) and the edge bridges remote TUI clients through it.
+`src/service/edge-relay.ts` implements the Channel interface over an outbound WebSocket to the GCE edge server (HTTPS/WSS). Handles TUI relay, action button proxying, and Gmail push notification forwarding. The conduit initiates the connection (NAT-friendly).
