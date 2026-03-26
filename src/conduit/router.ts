@@ -218,10 +218,14 @@ export class Router {
 
           case "text":
             if (channel.sendStreamText) {
-              const cleaned = stripMetadata(event.text);
-              if (cleaned) {
-                await channel.sendStreamText(userId, cleaned);
-                hasUnfinalizedText = true;
+              // Suppress streaming if we're inside an unclosed metadata block
+              const hasUnclosed = /<(memory|cairn_context|system-reminder)(?:[\s>])(?![\s\S]*<\/\1>)/i.test(event.text);
+              if (!hasUnclosed) {
+                const cleaned = stripMetadata(event.text);
+                if (cleaned) {
+                  await channel.sendStreamText(userId, cleaned);
+                  hasUnfinalizedText = true;
+                }
               }
             }
             // Channels without sendStreamText (e.g. Telegram) just ignore
