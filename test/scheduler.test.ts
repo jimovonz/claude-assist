@@ -1,5 +1,5 @@
 import { test, expect, describe } from "bun:test";
-import { cronMatches } from "../src/conduit/scheduler";
+import { cronMatches, resolveNotify } from "../src/conduit/scheduler";
 
 describe("cronMatches", () => {
   // Helper: create a Date for a specific time
@@ -77,5 +77,76 @@ describe("cronMatches", () => {
   test("invalid expression returns false", () => {
     expect(cronMatches("bad", d(2026, 3, 26, 0, 0))).toBe(false);
     expect(cronMatches("* * *", d(2026, 3, 26, 0, 0))).toBe(false);
+  });
+});
+
+describe("resolveNotify", () => {
+  describe("always mode", () => {
+    test("notifies when there is output", () => {
+      const result = resolveNotify("always", "Some output");
+      expect(result.shouldNotify).toBe(true);
+      expect(result.output).toBe("Some output");
+    });
+
+    test("does not notify on empty output", () => {
+      const result = resolveNotify("always", "");
+      expect(result.shouldNotify).toBe(false);
+    });
+
+    test("strips notify tag but still notifies", () => {
+      const result = resolveNotify("always", "<notify>false</notify>\nAll good");
+      expect(result.shouldNotify).toBe(true);
+      expect(result.output).toBe("All good");
+    });
+  });
+
+  describe("never mode", () => {
+    test("never notifies regardless of content", () => {
+      const result = resolveNotify("never", "Important alert!");
+      expect(result.shouldNotify).toBe(false);
+      expect(result.output).toBe("Important alert!");
+    });
+
+    test("never notifies even with notify true tag", () => {
+      const result = resolveNotify("never", "<notify>true</notify>\nAlert!");
+      expect(result.shouldNotify).toBe(false);
+    });
+  });
+
+  describe("auto mode", () => {
+    test("notifies when tag is true", () => {
+      const result = resolveNotify("auto", "<notify>true</notify>\nDisk at 95%!");
+      expect(result.shouldNotify).toBe(true);
+      expect(result.output).toBe("Disk at 95%!");
+    });
+
+    test("suppresses when tag is false", () => {
+      const result = resolveNotify("auto", "<notify>false</notify>\nAll systems healthy.");
+      expect(result.shouldNotify).toBe(false);
+      expect(result.output).toBe("All systems healthy.");
+    });
+
+    test("defaults to notify when no tag present", () => {
+      const result = resolveNotify("auto", "Output without tag");
+      expect(result.shouldNotify).toBe(true);
+      expect(result.output).toBe("Output without tag");
+    });
+
+    test("handles tag with whitespace", () => {
+      const result = resolveNotify("auto", "<notify> true </notify>\nAlert");
+      expect(result.shouldNotify).toBe(true);
+      expect(result.output).toBe("Alert");
+    });
+
+    test("handles case-insensitive tag", () => {
+      const result = resolveNotify("auto", "<notify>True</notify>\nAlert");
+      expect(result.shouldNotify).toBe(true);
+    });
+
+    test("handles tag with surrounding content", () => {
+      const result = resolveNotify("auto", "<notify>false</notify>\n\n## Summary\nAll good.");
+      expect(result.shouldNotify).toBe(false);
+      expect(result.output).toBe("## Summary\nAll good.");
+    });
   });
 });

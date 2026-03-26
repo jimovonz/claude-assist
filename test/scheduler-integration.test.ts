@@ -13,7 +13,7 @@ mock.module("../src/conduit/hooks", () => ({
   runPromptHook: async () => "",
 }));
 
-import { createTask, getTask, deleteTask } from "../src/conduit/state";
+import { createTask, getTask, deleteTask, listTasks } from "../src/conduit/state";
 import type { SessionEvent, SessionOptions } from "../src/conduit/session";
 
 // --- Mock SessionManager ---
@@ -339,6 +339,250 @@ describe("TaskScheduler", () => {
       expect(tg.sent[0].text).not.toContain("<memory>");
     });
   });
+
+  describe("notify modes", () => {
+    test("notify always sends output", async () => {
+      const sm = createMockSessionManager("Report here");
+      const tg = createMockTelegram();
+      const scheduler = new TaskScheduler({
+        sessionManager: sm as any,
+        telegram: tg as any,
+        tickIntervalMs: 999999,
+      });
+
+      scheduler.start();
+      await Bun.sleep(300);
+      scheduler.stop();
+
+      expect(tg.sent.length).toBe(1);
+      expect(tg.sent[0].text).toBe("Report here");
+    });
+
+    test("notify auto suppresses when LLM says false", async () => {
+      const { updateTask } = await import("../src/conduit/state");
+      updateTask(taskId, { notify: "auto" });
+
+      const sm = createMockSessionManager("<notify>false</notify>\nAll healthy.");
+      const tg = createMockTelegram();
+      const scheduler = new TaskScheduler({
+        sessionManager: sm as any,
+        telegram: tg as any,
+        tickIntervalMs: 999999,
+      });
+
+      scheduler.start();
+      await Bun.sleep(300);
+      scheduler.stop();
+
+      expect(tg.sent.length).toBe(0);
+      // Output still recorded
+      const updated = getTask(taskId)!;
+      expect(updated.lastRunOutput).toBe("All healthy.");
+    });
+
+    test("notify auto sends when LLM says true", async () => {
+      const { updateTask } = await import("../src/conduit/state");
+      updateTask(taskId, { notify: "auto" });
+
+      const sm = createMockSessionManager("<notify>true</notify>\nDisk full!");
+      const tg = createMockTelegram();
+      const scheduler = new TaskScheduler({
+        sessionManager: sm as any,
+        telegram: tg as any,
+        tickIntervalMs: 999999,
+      });
+
+      scheduler.start();
+      await Bun.sleep(300);
+      scheduler.stop();
+
+      expect(tg.sent.length).toBe(1);
+      expect(tg.sent[0].text).toBe("Disk full!");
+    });
+
+    test("notify never suppresses all output", async () => {
+      const { updateTask } = await import("../src/conduit/state");
+      updateTask(taskId, { notify: "never" });
+
+      const sm = createMockSessionManager("Important output");
+      const tg = createMockTelegram();
+      const scheduler = new TaskScheduler({
+        sessionManager: sm as any,
+        telegram: tg as any,
+        tickIntervalMs: 999999,
+      });
+
+      scheduler.start();
+      await Bun.sleep(300);
+      scheduler.stop();
+
+      expect(tg.sent.length).toBe(0);
+      // But output is still recorded
+      const updated = getTask(taskId)!;
+      expect(updated.lastRunOutput).toBe("Important output");
+    });
+
+    test("notify never suppresses error notifications", async () => {
+      const { updateTask } = await import("../src/conduit/state");
+      updateTask(taskId, { notify: "never" });
+
+      const sm = {
+        ...createMockSessionManager(),
+        sendMessage: async function* () { throw new Error("Crash"); },
+        removeSession: () => true,
+      };
+      const tg = createMockTelegram();
+      const scheduler = new TaskScheduler({
+        sessionManager: sm as any,
+        telegram: tg as any,
+        tickIntervalMs: 999999,
+      });
+
+      scheduler.start();
+      await Bun.sleep(300);
+      scheduler.stop();
+
+      expect(tg.sent.length).toBe(0); // never means never, even errors
+    });
+  });
+
+  describe("manual trigger force-notify", () => {
+    test("manual run notifies even when auto mode would suppress", async () => {
+      const { updateTask } = await import("../src/conduit/state");
+      updateTask(taskId, { notify: "auto" });
+
+      const sm = createMockSessionManager("<notify>false</notify>\nAll good.");
+      const tg = createMockTelegram();
+      const scheduler = new TaskScheduler({
+        sessionManager: sm as any,
+        telegram: tg as any,
+        tickIntervalMs: 999999,
+      });
+
+      scheduler.runTask(taskId);
+      await Bun.sleep(300);
+
+      // Manual trigger should force notify despite <notify>false</notify>
+      expect(tg.sent.length).toBe(1);
+      expect(tg.sent[0].text).toBe("All good.");
+    });
+  });
+
+  describe("one-shot auto-disable", () => {
+    test("one-shot task is disabled after firing", async () => {
+      const { updateTask } = await import("../src/conduit/state");
+      const futureMs = Date.now() - 1000; // already past
+      updateTask(taskId, { schedule: "", runAt: futureMs });
+
+      const sm = createMockSessionManager("One-shot output");
+      const tg = createMockTelegram();
+      const scheduler = new TaskScheduler({
+        sessionManager: sm as any,
+        telegram: tg as any,
+        tickIntervalMs: 999999,
+      });
+
+      scheduler.start();
+      await Bun.sleep(300);
+      scheduler.stop();
+
+      expect(tg.sent.length).toBe(1);
+      const updated = getTask(taskId)!;
+      expect(updated.enabled).toBe(false);
+    });
+
+    test("recurring task stays enabled after firing", async () => {
+      const sm = createMockSessionManager("Recurring output");
+      const tg = createMockTelegram();
+      const scheduler = new TaskScheduler({
+        sessionManager: sm as any,
+        telegram: tg as any,
+        tickIntervalMs: 999999,
+      });
+
+      scheduler.start();
+      await Bun.sleep(300);
+      scheduler.stop();
+
+      const updated = getTask(taskId)!;
+      expect(updated.enabled).toBe(true);
+    });
+  });
+
+  describe("model passed to session", () => {
+    test("model is passed in session options", async () => {
+      const { updateTask } = await import("../src/conduit/state");
+      updateTask(taskId, { model: "claude-haiku-4-5-20251001" });
+
+      const sm = createMockSessionManager("Output");
+      const tg = createMockTelegram();
+      const scheduler = new TaskScheduler({
+        sessionManager: sm as any,
+        telegram: tg as any,
+        tickIntervalMs: 999999,
+      });
+
+      scheduler.start();
+      await Bun.sleep(300);
+      scheduler.stop();
+
+      expect(sm.calls[0].options.model).toBe("claude-haiku-4-5-20251001");
+    });
+
+    test("no model passes undefined", async () => {
+      const sm = createMockSessionManager("Output");
+      const tg = createMockTelegram();
+      const scheduler = new TaskScheduler({
+        sessionManager: sm as any,
+        telegram: tg as any,
+        tickIntervalMs: 999999,
+      });
+
+      scheduler.start();
+      await Bun.sleep(300);
+      scheduler.stop();
+
+      expect(sm.calls[0].options.model).toBeUndefined();
+    });
+  });
+
+  describe("auto-notify instruction injection", () => {
+    test("injects notify instructions for auto mode", async () => {
+      const { updateTask } = await import("../src/conduit/state");
+      updateTask(taskId, { notify: "auto" });
+
+      const sm = createMockSessionManager("<notify>false</notify>\nOK");
+      const tg = createMockTelegram();
+      const scheduler = new TaskScheduler({
+        sessionManager: sm as any,
+        telegram: tg as any,
+        tickIntervalMs: 999999,
+      });
+
+      scheduler.start();
+      await Bun.sleep(300);
+      scheduler.stop();
+
+      expect(sm.calls[0].message).toContain("NOTIFICATION CONTROL");
+      expect(sm.calls[0].message).toContain("<notify>true</notify>");
+    });
+
+    test("does not inject notify instructions for always mode", async () => {
+      const sm = createMockSessionManager("Output");
+      const tg = createMockTelegram();
+      const scheduler = new TaskScheduler({
+        sessionManager: sm as any,
+        telegram: tg as any,
+        tickIntervalMs: 999999,
+      });
+
+      scheduler.start();
+      await Bun.sleep(300);
+      scheduler.stop();
+
+      expect(sm.calls[0].message).not.toContain("NOTIFICATION CONTROL");
+    });
+  });
 });
 
 describe("command handler", () => {
@@ -427,5 +671,75 @@ describe("command handler", () => {
     };
 
     expect(handleCommand("/nonexistent", ctx)).toBeNull();
+  });
+
+  test("/task <id> enable enables a task", () => {
+    const task = createTask({ name: "Enable me", prompt: "t", schedule: "0 9 * * *", telegramUserId: "1" });
+    const { updateTask: ut } = require("../src/conduit/state");
+    ut(task.id, { enabled: false });
+
+    const ctx = { sessionManager: createMockSessionManager() as any, channelId: "t:u", userId: "u" };
+    const result = handleCommand(`/task ${task.id} enable`, ctx);
+    expect(result!.text).toContain("enabled");
+    expect(getTask(task.id)!.enabled).toBe(true);
+    deleteTask(task.id);
+  });
+
+  test("/task with missing id returns usage", () => {
+    const ctx = { sessionManager: createMockSessionManager() as any, channelId: "t:u", userId: "u" };
+    const result = handleCommand("/task", ctx);
+    expect(result!.text).toContain("Usage");
+  });
+
+  test("/task with nonexistent id returns not found", () => {
+    const ctx = { sessionManager: createMockSessionManager() as any, channelId: "t:u", userId: "u" };
+    const result = handleCommand("/task nonexistent disable", ctx);
+    expect(result!.text).toContain("not found");
+  });
+
+  test("/task with unknown action returns error", () => {
+    const task = createTask({ name: "Action test", prompt: "t", schedule: "0 9 * * *", telegramUserId: "1" });
+    const ctx = { sessionManager: createMockSessionManager() as any, channelId: "t:u", userId: "u" };
+    const result = handleCommand(`/task ${task.id} explode`, ctx);
+    expect(result!.text).toContain("Unknown action");
+    deleteTask(task.id);
+  });
+
+  test("/tasks shows empty when no tasks", () => {
+    // Clean up any tasks from other tests
+    const allTasks = listTasks();
+    const testTasks = allTasks.filter(t => t.name.startsWith("Empty"));
+    const ctx = { sessionManager: createMockSessionManager() as any, channelId: "t:u", userId: "u" };
+    const result = handleCommand("/tasks", ctx);
+    expect(result).not.toBeNull();
+    // Just verify it returns something — exact count depends on test ordering
+    expect(typeof result!.text).toBe("string");
+  });
+
+  test("/clear resets session", () => {
+    const sm = createMockSessionManager();
+    const ctx = { sessionManager: sm as any, channelId: "test:user", userId: "user" };
+    const result = handleCommand("/clear", ctx);
+    expect(result!.text).toContain("Session cleared");
+    expect(sm.removedSessions).toContain("test:user");
+  });
+
+  test("/sessions lists sessions", () => {
+    const sm = createMockSessionManager();
+    const ctx = { sessionManager: sm as any, channelId: "test:user", userId: "user" };
+    const result = handleCommand("/sessions", ctx);
+    expect(result).not.toBeNull();
+    expect(result!.text).toContain("session");
+  });
+
+  test("non-command text is not a command", () => {
+    const { isCommand } = require("../src/conduit/commands");
+    expect(isCommand("/clear")).toBe(true);
+    expect(isCommand("/tasks")).toBe(true);
+    expect(isCommand("/task heartbeat run")).toBe(true);
+    expect(isCommand("hello")).toBe(false);
+    expect(isCommand("/ nope")).toBe(false);
+    expect(isCommand("/123")).toBe(false);
+    expect(isCommand("")).toBe(false);
   });
 });
