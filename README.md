@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-> **Work in Progress.** This project is functional but experimental and tightly coupled to a specific personal infrastructure setup — a particular GCE instance, Google Cloud project, OAuth credentials, and Telegram bot. No effort has been made yet to generalise configuration, provide setup automation, or make this accessible for general consumption. If you're interested in running something similar, the code and architecture are here to learn from, but expect to adapt significantly to your own environment.
+> **Work in Progress.** This project is functional but experimental and tightly coupled to a specific personal Linux infrastructure setup — a particular GCE instance, Google Cloud project, OAuth credentials, and Telegram bot. It is built for and tested on Linux only (Ubuntu/Debian with systemd). No effort has been made yet to generalise configuration, provide setup automation, or support other platforms. If you're interested in running something similar, the code and architecture are here to learn from, but expect to adapt significantly to your own environment.
 
 **Talk to Claude Code from anywhere. Telegram, browser, terminal. One session, full memory, all your tools.**
 
