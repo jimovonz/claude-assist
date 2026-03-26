@@ -121,13 +121,22 @@ describe("loadViewIndex", () => {
   });
 
   test("index grows after createView calls", () => {
-    const before = loadViewIndex().length;
+    const before = loadViewIndex();
+    const beforeLen = before.length;
     createView({ content: "Index test", title: "Index Entry" });
-    const after = loadViewIndex().length;
-    expect(after).toBeGreaterThan(before);
+    const after = loadViewIndex();
+
+    if (beforeLen < 100) {
+      // Index not full — should grow
+      expect(after.length).toBeGreaterThan(beforeLen);
+    } else {
+      // Index at cap — newest entry should be first (replaced oldest)
+      expect(after.length).toBe(100);
+      expect(after[0].title).toBe("Index Entry");
+    }
 
     // Clean up the file
-    const slug = loadViewIndex()[0].slug;
+    const slug = after[0].slug;
     const viewsDir = join(import.meta.dir, "..", "views");
     try { rmSync(join(viewsDir, `${slug}.html`)); } catch {}
   });
