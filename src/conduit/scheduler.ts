@@ -230,8 +230,8 @@ export function resolveNotify(mode: string, text: string): { shouldNotify: boole
     return { shouldNotify: notify, output };
   }
 
-  // No tag in auto mode — default to notify (safe default)
-  return { shouldNotify: true, output: text };
+  // No tag in auto mode — default to NOT notify (reduce noise)
+  return { shouldNotify: false, output: text };
 }
 
 // --- Inline cron parser ---

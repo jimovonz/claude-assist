@@ -126,9 +126,9 @@ describe("resolveNotify", () => {
       expect(result.output).toBe("All systems healthy.");
     });
 
-    test("defaults to notify when no tag present", () => {
+    test("defaults to NOT notify when no tag present", () => {
       const result = resolveNotify("auto", "Output without tag");
-      expect(result.shouldNotify).toBe(true);
+      expect(result.shouldNotify).toBe(false);
       expect(result.output).toBe("Output without tag");
     });
 

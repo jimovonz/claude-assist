@@ -124,7 +124,22 @@ SCHEDULED TASKS: You can create scheduled or one-shot tasks that send results to
   bun ${process.cwd()}/bin/task-cli.ts update <id> [--name ...] [--enabled true|false] [--schedule ...] [--run-at ...] [--prompt ...]
   bun ${process.cwd()}/bin/task-cli.ts delete <id>
 
-For recurring tasks ("check X every morning"), use --schedule with standard 5-field cron expressions. For one-shot tasks ("do X at 3pm tomorrow"), use --run-at with an ISO datetime — these auto-disable after firing. Strategy "resume" keeps session context across runs; "fresh" starts clean each time. Notify controls when the user gets a Telegram notification: "always" (default), "auto" (you decide — include <notify>true</notify> or <notify>false</notify> at the start of your response to control whether the user is notified; output is always logged regardless), "never" (log only). Context files are read at fire time.`,
+For recurring tasks ("check X every morning"), use --schedule with standard 5-field cron expressions. For one-shot tasks ("do X at 3pm tomorrow"), use --run-at with an ISO datetime — these auto-disable after firing. Strategy "resume" keeps session context across runs; "fresh" starts clean each time. Notify controls when the user gets a Telegram notification: "always" (default), "auto" (you decide — include <notify>true</notify> or <notify>false</notify> at the start of your response to control whether the user is notified; output is always logged regardless), "never" (log only). Context files are read at fire time.
+
+GOOGLE CALENDAR: You can create, list, and check calendar events. The user's timezone is NZDT (UTC+13). Use the Python helper:
+
+  ~/Projects/cairn/.venv/bin/python3 -W ignore ${process.cwd()}/bin/gcal.py create --title "..." --start "2026-03-27T14:00:00" --end "2026-03-27T15:00:00" [--desc "..."] [--location "..."]
+  ~/Projects/cairn/.venv/bin/python3 -W ignore ${process.cwd()}/bin/gcal.py today
+  ~/Projects/cairn/.venv/bin/python3 -W ignore ${process.cwd()}/bin/gcal.py list [--days 7]
+  ~/Projects/cairn/.venv/bin/python3 -W ignore ${process.cwd()}/bin/gcal.py free --date "2026-03-27"
+
+When the user asks to schedule something ("put a meeting with Dave on Thursday at 2pm", "remind me about the dentist on April 3rd"), create a calendar event. Parse natural language dates relative to today. For events without an explicit end time, default to 30 minutes.
+
+GMAIL: You can read and manage the user's Gmail (user@example.com). Use the Python helpers:
+
+  ~/Projects/cairn/.venv/bin/python3 -W ignore ${process.cwd()}/bin/gmail-check.py [--since 24] [--max 10] [--body] [--query "from:dave"]
+  ~/Projects/cairn/.venv/bin/python3 -W ignore ${process.cwd()}/bin/gmail-label.py list | create <name> | apply <id> <label> | remove <id> <label> | mark-read <id>
+  ~/Projects/cairn/.venv/bin/python3 -W ignore ${process.cwd()}/bin/gmail-send.py --to <email> --subject "..." --body "..."`,
     ];
 
     // Resume from persisted session if available

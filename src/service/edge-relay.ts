@@ -13,12 +13,14 @@
 import type { Channel } from "../conduit/router";
 import type { SessionManager } from "../conduit/session";
 import type { ActionHandler } from "../views/server";
+import type { EmailAgent } from "../conduit/email-agent";
 
 export interface EdgeRelayConfig {
   edgeUrl: string;
   apiSecret?: string;
   sessionManager?: SessionManager;
   onAction?: ActionHandler;
+  emailAgent?: EmailAgent;
 }
 
 export class EdgeRelay implements Channel {
@@ -35,6 +37,7 @@ export class EdgeRelay implements Channel {
   private stopped = false;
   private reconnectDelay = 1000;
   private onAction?: ActionHandler;
+  private emailAgent?: EmailAgent;
 
   constructor(config: EdgeRelayConfig) {
     this.edgeUrl = config.edgeUrl;
@@ -42,6 +45,7 @@ export class EdgeRelay implements Channel {
     this.apiSecret = config.apiSecret;
     this.sessionManager = config.sessionManager;
     this.onAction = config.onAction;
+    this.emailAgent = config.emailAgent;
   }
 
   async start(onMessage: (userId: string, text: string) => void) {
@@ -108,6 +112,16 @@ export class EdgeRelay implements Channel {
     // Action messages don't have userId — they have viewId
     if (data.type === "action") {
       this.handleActionMessage(data);
+      return;
+    }
+
+    // Gmail push notifications don't have userId
+    if (data.type === "gmail-push") {
+      if (this.emailAgent) {
+        this.emailAgent.handlePush(data.emailAddress, data.historyId);
+      } else {
+        console.log("[edge-relay] Gmail push received but no email agent configured");
+      }
       return;
     }
 

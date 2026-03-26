@@ -98,6 +98,9 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full architectural breakdown, des
 | **Scheduler** | `src/conduit/scheduler.ts` | Cron + one-shot task scheduling, LLM-controlled notifications, context injection |
 | **Commands** | `src/conduit/commands.ts` | Centralized `/tasks`, `/task`, `/clear`, `/context`, `/sessions`, `/help` |
 | **Task CLI** | `bin/task-cli.ts` | CLI for Claude subprocess to create/manage scheduled tasks |
+| **Email Agent** | `src/conduit/email-agent.ts` | Gmail push processing: classification, labeling, calendar events, notifications |
+| **Gmail Helpers** | `bin/gmail-*.py` | Gmail API: check, label, send, watch (OAuth, Python) |
+| **Calendar Helper** | `bin/gcal.py` | Google Calendar: create, list, today, free slots (OAuth, Python) |
 | **Telegram** | `src/conduit/channels/telegram/` | Grammy bot, status edits, typing indicator, task reply routing |
 | **WebSocket/TUI** | `src/conduit/channels/websocket/` | WebSocket channel for local and remote TUI clients |
 | **Edge Relay** | `src/service/edge-relay.ts` | Outbound WebSocket to GCE edge for NAT-friendly remote TUI access |
@@ -129,11 +132,15 @@ Functional multi-channel assistant with Telegram, TUI, remote TUI access, and HT
 - [x] Cairn memory integration (prompt and stop hooks)
 - [x] Scheduled agent tasks — cron, one-shot, per-task model, LLM-controlled notifications, context files/queries, reply-to routing
 - [x] Centralized commands (`/tasks`, `/task`, `/clear`, `/context`, `/sessions`, `/help`) across all channels
+- [x] Email agent — Gmail push notifications, intelligent classification/labeling, auto calendar events, actionable-only alerts
+- [x] Google API integration — Gmail (read/send/label), Calendar (CRUD), accessible from all channels via system prompt
+- [x] SSL on GCE edge server (Let's Encrypt)
 
 **Planned:**
-- [ ] Email triage agent with Google Calendar integration
+- [ ] Todo system — natural language, time-aware reminders
+- [ ] Email drafting with review/approval flow
 - [ ] Web CLI channel (browser-based terminal)
-- [ ] Telegram Mini Apps for interactive two-way content (actionable buttons on task output)
+- [ ] Interactive HTML views with action buttons (on feature branch)
 
 ## License
 
