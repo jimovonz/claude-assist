@@ -320,19 +320,25 @@ function generateHtml(title: string, content: string, options?: { actions?: View
     .action-option {
       display: flex;
       align-items: center;
-      gap: 8px;
-      padding: 6px 8px;
-      border-radius: 4px;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: 6px;
       cursor: pointer;
-      font-size: 14px;
+      font-size: 15px;
+      border: 1px solid transparent;
+      -webkit-tap-highlight-color: rgba(122, 162, 247, 0.2);
     }
 
-    .action-option:hover {
+    .action-option:hover, .action-option:active {
       background: rgba(122, 162, 247, 0.1);
+      border-color: var(--border);
     }
 
     .action-option input {
       accent-color: var(--accent);
+      width: 20px;
+      height: 20px;
+      min-width: 20px;
     }
 
     .action-input {
@@ -430,7 +436,11 @@ function generateHtml(title: string, content: string, options?: { actions?: View
 
     async function doSelect(actionId) {
       const selected = document.querySelector('input[name="action-' + actionId + '"]:checked');
-      if (!selected) return;
+      if (!selected) {
+        document.getElementById('action-status').style.display = 'block';
+        document.getElementById('action-status').textContent = 'Please select an option first';
+        return;
+      }
       const value = selected.value;
       if (await sendAction(actionId, 'Selected: ' + value, value)) {
         document.querySelector('[data-action-id="' + actionId + '"] .action-submit').classList.add('done');
@@ -440,7 +450,11 @@ function generateHtml(title: string, content: string, options?: { actions?: View
 
     async function doCheckbox(actionId) {
       const checked = Array.from(document.querySelectorAll('input[name="action-' + actionId + '"]:checked')).map(i => i.value);
-      if (!checked.length) return;
+      if (!checked.length) {
+        document.getElementById('action-status').style.display = 'block';
+        document.getElementById('action-status').textContent = 'Please select at least one option';
+        return;
+      }
       const value = checked.join(', ');
       if (await sendAction(actionId, 'Selected: ' + value, value)) {
         document.querySelector('[data-action-id="' + actionId + '"] .action-submit').classList.add('done');
