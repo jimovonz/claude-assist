@@ -2,6 +2,7 @@
 
 import { SessionManager, Router, TelegramChannel, WebSocketChannel, closeDb } from "../src/conduit";
 import { TaskScheduler } from "../src/conduit/scheduler";
+import { EmailAgent, setupWatchRenewal } from "../src/conduit/email-agent";
 import { ViewServer } from "../src/views/server";
 import { install, serviceCommand, statusCommand, logsCommand } from "../src/service/systemd";
 import { sdReady, sdStopping, startWatchdog } from "../src/service/watchdog";
@@ -65,6 +66,14 @@ async function start() {
   router.addChannel(telegram);
   router.addChannel(wsChannel);
 
+  // Email agent for Gmail push notification processing
+  const ownerId = process.env.TELEGRAM_OWNER_ID ?? "";
+  const emailAgent = new EmailAgent({
+    sessionManager,
+    telegram,
+    telegramUserId: ownerId,
+  });
+
   // Edge relay for remote TUI access via GCE
   let edgeRelay: EdgeRelay | null = null;
   if (edgeUrl) {
@@ -72,9 +81,13 @@ async function start() {
       edgeUrl,
       apiSecret: process.env.EDGE_API_SECRET,
       sessionManager,
+      emailAgent,
     });
     router.addChannel(edgeRelay);
   }
+
+  // Ensure Gmail watch renewal task exists
+  setupWatchRenewal();
 
   // Start task scheduler
   const scheduler = new TaskScheduler({ sessionManager, telegram });
@@ -113,7 +126,6 @@ async function start() {
   console.log("[conduit] Service ready");
 
   // Notify owner of restart via Telegram (delayed to allow edge relay to connect)
-  const ownerId = process.env.TELEGRAM_OWNER_ID;
   if (ownerId) {
     setTimeout(async () => {
       const { Bot } = await import("grammy");

@@ -4,6 +4,7 @@ export type { Channel } from "./router";
 export { TelegramChannel } from "./channels/telegram";
 export { WebSocketChannel } from "./channels/websocket";
 export { TaskScheduler } from "./scheduler";
+export { EmailAgent, setupWatchRenewal } from "./email-agent";
 export { isCommand, handleCommand } from "./commands";
 export { runStopHook, runPromptHook } from "./hooks";
 export { loadSessionState, saveSession, removeSession, closeDb, createTask, getTask, listTasks, updateTask, deleteTask } from "./state";
