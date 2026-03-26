@@ -7,25 +7,87 @@ const PYTHON = process.env.CAIRN_PYTHON ?? join(CAIRN_DIR, ".venv", "bin", "pyth
 const STOP_HOOK = join(CAIRN_DIR, "hooks", "stop_hook.py");
 const PROMPT_HOOK = join(CAIRN_DIR, "hooks", "prompt_hook.py");
 
+export type StopHookResult = { block: boolean; reason?: string };
+
 /**
- * Run the Cairn stop hook: parse <memory> blocks, store in DB,
- * check for context:insufficient, handle continuation logic.
- *
- * Returns { block: boolean, reason?: string, contextQuery?: string }
+ * Parse stop hook stdout into a result.
+ * Exported for testing — this is the core decision logic.
  */
-export async function runStopHook(
+export function parseStopHookOutput(stdout: string): StopHookResult {
+  const trimmed = stdout.trim();
+  if (!trimmed) return { block: false };
+
+  try {
+    const result = JSON.parse(trimmed);
+    if (result.decision === "block" && result.reason) {
+      return { block: true, reason: result.reason };
+    }
+  } catch {
+    // Not JSON — ignore
+  }
+
+  return { block: false };
+}
+
+/**
+ * Parse prompt hook stdout into a context string.
+ * Exported for testing — this is the core extraction logic.
+ */
+export function parsePromptHookOutput(stdout: string): string {
+  const trimmed = stdout.trim();
+  if (!trimmed) return "";
+
+  try {
+    const result = JSON.parse(trimmed);
+    return result.hookSpecificOutput?.additionalContext ?? "";
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Build the JSON input for the stop hook subprocess.
+ * Exported for testing.
+ */
+export function buildStopHookInput(
   sessionId: string,
   assistantMessage: string,
   cwd: string,
-  isContinuation = false
-): Promise<{ block: boolean; reason?: string }> {
-  const input = JSON.stringify({
+  isContinuation: boolean
+): string {
+  return JSON.stringify({
     session_id: sessionId,
     last_assistant_message: assistantMessage,
     cwd,
     stop_hook_active: isContinuation,
     transcript_path: "",
   });
+}
+
+/**
+ * Build the JSON input for the prompt hook subprocess.
+ * Exported for testing.
+ */
+export function buildPromptHookInput(sessionId: string, userMessage: string): string {
+  return JSON.stringify({
+    session_id: sessionId,
+    user_message: userMessage,
+  });
+}
+
+/**
+ * Run the Cairn stop hook: parse <memory> blocks, store in DB,
+ * check for context:insufficient, handle continuation logic.
+ *
+ * Returns { block: boolean, reason?: string }
+ */
+export async function runStopHook(
+  sessionId: string,
+  assistantMessage: string,
+  cwd: string,
+  isContinuation = false
+): Promise<StopHookResult> {
+  const input = buildStopHookInput(sessionId, assistantMessage, cwd, isContinuation);
 
   try {
     const proc = spawn({
@@ -40,22 +102,13 @@ export async function runStopHook(
 
     await proc.exited;
     const stdout = await new Response(proc.stdout).text();
+    const result = parseStopHookOutput(stdout);
 
-    // Hook signals block by printing JSON with decision:"block" to stdout (exit 0)
-    // or by exiting with code 2
-    if (stdout.trim()) {
-      try {
-        const result = JSON.parse(stdout.trim());
-        if (result.decision === "block" && result.reason) {
-          console.log(`[hooks] Stop hook blocked: ${result.reason.substring(0, 100)}`);
-          return { block: true, reason: result.reason };
-        }
-      } catch {
-        // Not JSON — ignore
-      }
+    if (result.block) {
+      console.log(`[hooks] Stop hook blocked: ${result.reason!.substring(0, 100)}`);
     }
 
-    return { block: false };
+    return result;
   } catch (err) {
     console.error("[hooks] Stop hook error:", err);
     return { block: false };
@@ -72,10 +125,7 @@ export async function runPromptHook(
   sessionId: string,
   userMessage: string
 ): Promise<string> {
-  const input = JSON.stringify({
-    session_id: sessionId,
-    user_message: userMessage,
-  });
+  const input = buildPromptHookInput(sessionId, userMessage);
 
   try {
     const proc = spawn({
@@ -90,21 +140,13 @@ export async function runPromptHook(
 
     await proc.exited;
     const stdout = await new Response(proc.stdout).text();
+    const context = parsePromptHookOutput(stdout);
 
-    if (stdout.trim()) {
-      try {
-        const result = JSON.parse(stdout.trim());
-        const context = result.hookSpecificOutput?.additionalContext ?? "";
-        if (context) {
-          console.log(`[hooks] Prompt hook injected context (${context.length} chars)`);
-        }
-        return context;
-      } catch {
-        return "";
-      }
+    if (context) {
+      console.log(`[hooks] Prompt hook injected context (${context.length} chars)`);
     }
 
-    return "";
+    return context;
   } catch (err) {
     console.error("[hooks] Prompt hook error:", err);
     return "";

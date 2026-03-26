@@ -11,11 +11,11 @@ export interface TelegramConfig {
   sessionManager?: SessionManager;
 }
 
-function escapeHtml(text: string): string {
+export function escapeHtml(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-function buildViewsListMarkdown(views: ViewRecord[]): string {
+export function buildViewsListMarkdown(views: ViewRecord[]): string {
   const lines: string[] = ["## Previous Responses\n"];
 
   let currentDay = "";

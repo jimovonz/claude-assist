@@ -50,7 +50,7 @@ mock.module("grammy", () => ({
 }));
 
 // Import AFTER mock is registered
-const { TelegramChannel } = await import("../src/conduit/channels/telegram");
+const { TelegramChannel, escapeHtml, buildViewsListMarkdown } = await import("../src/conduit/channels/telegram");
 
 // =============================================================================
 // Message Delivery
@@ -234,5 +234,93 @@ describe("user allowlist", () => {
     });
     const allowedSet = (channel as any).allowedUserIds as Set<string>;
     expect(allowedSet.size).toBe(0);
+  });
+});
+
+// =============================================================================
+// Telegram Utility Functions
+// =============================================================================
+
+describe("escapeHtml", () => {
+  test("escapes ampersand", () => {
+    expect(escapeHtml("a & b")).toBe("a &amp; b");
+  });
+
+  test("escapes angle brackets", () => {
+    expect(escapeHtml("<script>")).toBe("&lt;script&gt;");
+  });
+
+  test("handles empty string", () => {
+    expect(escapeHtml("")).toBe("");
+  });
+
+  test("handles string with no special chars", () => {
+    expect(escapeHtml("hello world")).toBe("hello world");
+  });
+
+  test("handles multiple special chars", () => {
+    expect(escapeHtml("a & b < c > d")).toBe("a &amp; b &lt; c &gt; d");
+  });
+});
+
+describe("buildViewsListMarkdown", () => {
+  test("returns header for empty views", () => {
+    const result = buildViewsListMarkdown([]);
+    expect(result).toContain("## Previous Responses");
+  });
+
+  test("includes view title and URL", () => {
+    const views = [{
+      slug: "test-abc",
+      title: "Test View",
+      url: "https://example.com/view/test-abc",
+      localUrl: "/view/test-abc",
+      createdAt: "2026-03-26T10:00:00.000Z",
+      chars: 500,
+    }];
+    const result = buildViewsListMarkdown(views);
+    expect(result).toContain("Test View");
+    expect(result).toContain("https://example.com/view/test-abc");
+    expect(result).toContain("500");
+  });
+
+  test("formats large char counts with K suffix", () => {
+    const views = [{
+      slug: "big-abc",
+      title: "Big View",
+      url: "/view/big-abc",
+      localUrl: "/view/big-abc",
+      createdAt: "2026-03-26T10:00:00.000Z",
+      chars: 5000,
+    }];
+    const result = buildViewsListMarkdown(views);
+    expect(result).toContain("5.0K");
+  });
+
+  test("groups views by day", () => {
+    const views = [
+      {
+        slug: "a", title: "View A", url: "/a", localUrl: "/a",
+        createdAt: "2026-03-26T10:00:00.000Z", chars: 100,
+      },
+      {
+        slug: "b", title: "View B", url: "/b", localUrl: "/b",
+        createdAt: "2026-03-25T10:00:00.000Z", chars: 200,
+      },
+    ];
+    const result = buildViewsListMarkdown(views);
+    // Should have day headers (### format)
+    expect((result.match(/###/g) ?? []).length).toBeGreaterThanOrEqual(1);
+  });
+
+  test("limits to 50 views", () => {
+    const views = Array.from({ length: 60 }, (_, i) => ({
+      slug: `v-${i}`, title: `View ${i}`, url: `/v-${i}`, localUrl: `/v-${i}`,
+      createdAt: `2026-03-26T${String(i % 24).padStart(2, "0")}:00:00.000Z`,
+      chars: 100,
+    }));
+    const result = buildViewsListMarkdown(views);
+    // Should not contain views beyond index 50
+    expect(result).not.toContain("View 55");
   });
 });

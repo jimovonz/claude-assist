@@ -306,7 +306,55 @@ export class SessionManager {
   }
 }
 
-function describeToolCall(name: string, input: Record<string, unknown>): string {
+/**
+ * Parse a single stream-json message and produce SessionEvents.
+ * Exported for unit testing without subprocess dependency.
+ */
+export function parseStreamMessage(
+  msg: any,
+  lastAssistantText: string
+): { events: SessionEvent[]; lastAssistantText: string } {
+  const events: SessionEvent[] = [];
+
+  if (msg.type === "assistant") {
+    const content = msg.message?.content;
+    if (Array.isArray(content)) {
+      for (const block of content) {
+        if (block.type === "tool_use") {
+          const toolName = block.name ?? "unknown";
+          const input = block.input ?? {};
+          events.push({ type: "status", text: describeToolCall(toolName, input) });
+        }
+        if (block.type === "text" && block.text) {
+          lastAssistantText = block.text;
+          events.push({ type: "text", text: block.text });
+        }
+      }
+    }
+  }
+
+  if (msg.type === "result") {
+    const resultText = (msg.result as string) || lastAssistantText || "";
+    const sessionId = (msg.session_id as string) ?? "";
+
+    const usage: UsageInfo | undefined = msg.usage ? {
+      inputTokens: msg.usage.input_tokens ?? 0,
+      outputTokens: msg.usage.output_tokens ?? 0,
+      cacheReadTokens: msg.usage.cache_read_input_tokens ?? 0,
+      cacheCreationTokens: msg.usage.cache_creation_input_tokens ?? 0,
+      totalCostUsd: msg.total_cost_usd ?? 0,
+      contextWindow: msg.modelUsage
+        ? Object.values(msg.modelUsage as Record<string, any>)[0]?.contextWindow ?? 0
+        : 0,
+    } : undefined;
+
+    events.push({ type: "result", text: resultText, sessionId, usage });
+  }
+
+  return { events, lastAssistantText };
+}
+
+export function describeToolCall(name: string, input: Record<string, unknown>): string {
   switch (name) {
     case "Read":
       return `📖 Reading ${shortenPath(input.file_path as string)}`;
@@ -333,7 +381,7 @@ function describeToolCall(name: string, input: Record<string, unknown>): string 
   }
 }
 
-function shortenPath(path: string | undefined): string {
+export function shortenPath(path: string | undefined): string {
   if (!path) return "file";
   const parts = path.split("/");
   return parts.length > 2 ? `.../${parts.slice(-2).join("/")}` : path;

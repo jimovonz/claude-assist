@@ -12,7 +12,7 @@ interface Line {
   lang?: string;
 }
 
-function classifyLine(line: string, inCode: boolean): Line {
+export function classifyLine(line: string, inCode: boolean): Line {
   if (inCode) {
     if (line.startsWith("```")) return { type: "code_end", content: "" };
     return { type: "code", content: line };
