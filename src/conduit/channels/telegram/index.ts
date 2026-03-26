@@ -43,13 +43,16 @@ export class TelegramChannel implements Channel {
   private bot: Bot;
   private allowedUserIds: Set<string>;
   private sessionManager?: SessionManager;
-  private onMessage?: (userId: string, text: string) => void;
+  private onMessage?: (userId: string, text: string, channelIdOverride?: string) => void;
   private statusMessages = new Map<string, number>();
   private lastStatusEdit = new Map<string, number>();
   private pendingStatus = new Map<string, string>();
   private statusTimers = new Map<string, Timer>();
   // Keep typing indicator alive per user
   private typingTimers = new Map<string, Timer>();
+  // Task reply routing: messageId → taskChannelId
+  private taskReplyMap = new Map<number, string>();
+  private taskReplyOrder: number[] = []; // bounded FIFO
 
   constructor(config: TelegramConfig) {
     this.bot = new Bot(config.botToken);
@@ -57,7 +60,7 @@ export class TelegramChannel implements Channel {
     this.sessionManager = config.sessionManager;
   }
 
-  async start(onMessage: (userId: string, text: string) => void) {
+  async start(onMessage: (userId: string, text: string, channelIdOverride?: string) => void) {
     this.onMessage = onMessage;
 
     this.bot.on("message:text", async (ctx) => {
@@ -71,17 +74,17 @@ export class TelegramChannel implements Channel {
       const text = ctx.message.text;
       console.log(`[telegram] Message from ${userId}: ${text.substring(0, 50)}...`);
 
-      // Handle commands
-      const trimmed = text.trim();
-
-      if (trimmed === "/clear") {
-        this.sessionManager?.removeSession(`telegram:${userId}`);
-        const chatId = parseInt(userId);
-        this.bot.api.sendMessage(chatId, "Session cleared. Next message starts fresh.").catch(() => {});
-        console.log(`[telegram] Cleared session for ${userId}`);
+      // Check if this is a reply to a task message
+      const replyTo = ctx.message.reply_to_message?.message_id;
+      if (replyTo && this.taskReplyMap.has(replyTo)) {
+        const taskChannelId = this.taskReplyMap.get(replyTo)!;
+        console.log(`[telegram] Reply to task message → routing to ${taskChannelId}`);
+        this.onMessage?.(userId, text, taskChannelId);
         return;
       }
 
+      // Handle /views locally (needs Telegram-specific view creation)
+      const trimmed = text.trim();
       if (trimmed === "/views") {
         const chatId = parseInt(userId);
         const views = loadViewIndex();
@@ -103,26 +106,8 @@ export class TelegramChannel implements Channel {
         return;
       }
 
-      if (trimmed === "/context") {
-        const chatId = parseInt(userId);
-        const channelId = `telegram:${userId}`;
-        const usage = this.sessionManager?.getUsage(channelId);
-        if (!usage) {
-          this.bot.api.sendMessage(chatId, "No usage data yet — send a message first.").catch(() => {});
-        } else {
-          const totalInput = usage.inputTokens + usage.cacheReadTokens + usage.cacheCreationTokens;
-          const pct = usage.contextWindow > 0 ? ((totalInput + usage.outputTokens) / usage.contextWindow * 100).toFixed(1) : "?";
-          const msg = [
-            `Context: ${pct}% of ${(usage.contextWindow / 1000).toFixed(0)}K`,
-            `In: ${(totalInput / 1000).toFixed(1)}K (${(usage.cacheReadTokens / 1000).toFixed(1)}K cached)`,
-            `Out: ${(usage.outputTokens / 1000).toFixed(1)}K`,
-            `Cost: $${usage.totalCostUsd.toFixed(2)}`,
-          ].join("\n");
-          this.bot.api.sendMessage(chatId, msg).catch(() => {});
-        }
-        return;
-      }
-
+      // All other commands (/clear, /context, /tasks, /task, /help, etc.)
+      // are handled centrally by the Router
       this.onMessage?.(userId, text);
     });
 
@@ -301,6 +286,75 @@ export class TelegramChannel implements Channel {
       this.statusTimers.delete(userId);
     }
     this.pendingStatus.delete(userId);
+  }
+
+  async sendTaskResult(userId: string, taskName: string, text: string, taskChannelId: string) {
+    const chatId = parseInt(userId);
+    const header = `📋 Scheduled Task: ${taskName}`;
+    const full = `${header}\n\n${text}`;
+    const maxLen = 4096;
+
+    let lastMsgId: number | undefined;
+
+    // Check if this should be a view (long/rich content)
+    const { shouldCreateView, createViewAsync } = await import("../../../views/renderer");
+    if (shouldCreateView(text)) {
+      try {
+        const viewContent = `# ${header}\n\n${text}`;
+        const { token, url: edgeUrl } = await createViewAsync({
+          content: viewContent,
+          title: taskName,
+          channel: "telegram",
+          userId,
+        });
+        const baseUrl = EDGE_URL || "http://localhost:8099";
+        const viewUrl = edgeUrl ?? `${baseUrl}/view/${token}`;
+        // Send summary + view link
+        const firstPara = text.split("\n\n")[0];
+        const summary = firstPara.length > 200 ? firstPara.substring(0, 200) + "..." : firstPara;
+        const msg = await this.bot.api.sendMessage(chatId, `${header}\n\n${summary}\n\n📄 Full report: ${viewUrl}`);
+        lastMsgId = msg.message_id;
+      } catch (err: any) {
+        console.error(`[telegram] View creation failed for task result, falling back to text: ${err.message}`);
+        // Fall through to plain text
+      }
+    }
+
+    // Plain text fallback (or short content)
+    if (!lastMsgId) {
+      if (full.length <= maxLen) {
+        const msg = await this.bot.api.sendMessage(chatId, full);
+        lastMsgId = msg.message_id;
+      } else {
+        const lines = full.split("\n");
+        let chunk = "";
+        for (const line of lines) {
+          if (chunk.length + line.length + 1 > maxLen) {
+            if (chunk) {
+              const msg = await this.bot.api.sendMessage(chatId, chunk);
+              lastMsgId = msg.message_id;
+            }
+            chunk = line;
+          } else {
+            chunk += (chunk ? "\n" : "") + line;
+          }
+        }
+        if (chunk) {
+          const msg = await this.bot.api.sendMessage(chatId, chunk);
+          lastMsgId = msg.message_id;
+        }
+      }
+    }
+
+    // Track for reply routing (bounded to 100 entries)
+    if (lastMsgId) {
+      this.taskReplyMap.set(lastMsgId, taskChannelId);
+      this.taskReplyOrder.push(lastMsgId);
+      while (this.taskReplyOrder.length > 100) {
+        const old = this.taskReplyOrder.shift()!;
+        this.taskReplyMap.delete(old);
+      }
+    }
   }
 
   async stop() {

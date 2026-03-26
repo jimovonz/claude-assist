@@ -44,7 +44,10 @@ interface AppProps {
 
 const COMMANDS: Record<string, string> = {
   "/clear": "Reset the Claude session (fresh conversation)",
+  "/context": "Show context window usage and cost",
   "/sessions": "List all active sessions",
+  "/tasks": "List all scheduled tasks",
+  "/task": "<id> <enable|disable|delete|run> — Manage a task",
   "/incognito": "Toggle incognito mode (bash-like appearance)",
   "/exit": "Quit the TUI",
   "/help": "Show available commands",
@@ -252,10 +255,15 @@ export function App({ host, token }: AppProps) {
         return;
       }
 
-      // Handle server commands
-      if (text === "/clear" || text === "/sessions") {
+      // Handle server commands — sent as regular messages, router handles them
+      if (text.startsWith("/") && /^\/[a-z]/.test(text)) {
         setMessages((prev) => [...prev, { role: "user", text, streaming: false }]);
-        conn.sendCommand(text.slice(1)); // strip the /
+        // /clear also clears local message state
+        if (text === "/clear") {
+          setMessages([]);
+          setStatus("");
+        }
+        conn.sendMessage(text);
         return;
       }
 

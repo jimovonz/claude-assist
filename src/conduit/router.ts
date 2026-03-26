@@ -2,6 +2,8 @@ import { SessionManager, type SessionEvent } from "./session";
 import { runStopHook, runPromptHook } from "./hooks";
 import { createViewAsync, shouldCreateView, EDGE_URL } from "../views/renderer";
 import type { ViewServer } from "../views/server";
+import { isCommand, handleCommand, type CommandContext } from "./commands";
+import type { TaskScheduler } from "./scheduler";
 import { homedir } from "os";
 import { join } from "path";
 
@@ -12,6 +14,7 @@ export function stripMetadata(text: string): string {
     .replace(/^\s*<memory>[\s\S]*?<\/memory>\s*$/gm, "")
     .replace(/<cairn_context[\s\S]*?<\/cairn_context>/g, "")
     .replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "")
+    .replace(/<notify>\s*(true|false)\s*<\/notify>\s*/gi, "")
     .replace(/^Sources:\n(- \[.*?\]\(.*?\)\n?)*/gm, "")
     .trim();
 }
@@ -62,7 +65,7 @@ export interface Channel {
   sendStreamText?(userId: string, text: string): Promise<void>;
   sendStreamEnd?(userId: string): Promise<void>;
   clearStatus?(userId: string): Promise<void>;
-  start(onMessage: (userId: string, text: string) => void): Promise<void>;
+  start(onMessage: (userId: string, text: string, channelIdOverride?: string) => void): Promise<void>;
   stop(): Promise<void>;
 }
 
@@ -71,10 +74,15 @@ export class Router {
   private channels = new Map<string, Channel>();
   private messageQueues = new Map<string, Promise<void>>();
   private viewServer: ViewServer | null = null;
+  private scheduler: TaskScheduler | null = null;
 
   constructor(sessionManager: SessionManager, viewServer?: ViewServer) {
     this.sessionManager = sessionManager;
     this.viewServer = viewServer ?? null;
+  }
+
+  setScheduler(scheduler: TaskScheduler) {
+    this.scheduler = scheduler;
   }
 
   addChannel(channel: Channel) {
@@ -83,8 +91,8 @@ export class Router {
 
   async start() {
     for (const channel of this.channels.values()) {
-      await channel.start((userId, text) => {
-        this.handleMessage(channel, userId, text);
+      await channel.start((userId, text, channelIdOverride) => {
+        this.handleMessage(channel, userId, text, channelIdOverride);
       });
       console.log(`[conduit] Channel started: ${channel.name}`);
     }
@@ -99,8 +107,8 @@ export class Router {
     console.log("[conduit] Router stopped");
   }
 
-  private async handleMessage(channel: Channel, userId: string, text: string) {
-    const channelId = `${channel.id}:${userId}`;
+  private async handleMessage(channel: Channel, userId: string, text: string, channelIdOverride?: string) {
+    const channelId = channelIdOverride ?? `${channel.id}:${userId}`;
 
     const previous = this.messageQueues.get(channelId) ?? Promise.resolve();
     const current = previous.then(() => this.processMessage(channel, channelId, userId, text));
@@ -109,6 +117,22 @@ export class Router {
   }
 
   private async processMessage(channel: Channel, channelId: string, userId: string, text: string) {
+    // Handle commands centrally
+    if (isCommand(text)) {
+      const ctx: CommandContext = {
+        sessionManager: this.sessionManager,
+        scheduler: this.scheduler ?? undefined,
+        channelId,
+        userId,
+      };
+      const result = handleCommand(text, ctx);
+      if (result) {
+        await channel.reply(userId, result.text);
+        return;
+      }
+      // Unknown command — fall through to Claude
+    }
+
     const existing = this.sessionManager.getSession(channelId);
     // Use the Claude session ID if we have one, otherwise generate a fresh one
     // so the prompt hook's first_prompt check works correctly

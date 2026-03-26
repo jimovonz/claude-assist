@@ -166,42 +166,15 @@ export class WebSocketChannel implements Channel {
       return;
     }
 
-    // Commands
+    // Commands — send as /command text to router for central handling
     if (msg.type === "command") {
-      this.handleCommand(ws, state, msg.command);
+      this.onMessage?.(state.userId, `/${msg.command}`);
       return;
     }
 
     // User message
     if (msg.type === "message" && typeof msg.text === "string") {
       this.onMessage?.(state.userId, msg.text);
-    }
-  }
-
-  private handleCommand(ws: ServerWebSocket<ClientState>, state: ClientState, command: string) {
-    const channelId = `${this.id}:${state.userId}`;
-
-    switch (command) {
-      case "clear": {
-        if (this.sessionManager) {
-          this.sessionManager.removeSession(channelId);
-          console.log(`[tui] Cleared session for ${state.userId}`);
-        }
-        ws.send(JSON.stringify({ type: "command_ok", command: "clear", text: "Session cleared. Next message starts fresh." }));
-        break;
-      }
-      case "sessions": {
-        const sessions = this.sessionManager?.listSessions() ?? [];
-        const list = sessions.map((s) => ({
-          channelId: s.channelId,
-          lastActivity: s.lastActivity,
-          live: s.live,
-        }));
-        ws.send(JSON.stringify({ type: "command_ok", command: "sessions", data: list }));
-        break;
-      }
-      default:
-        ws.send(JSON.stringify({ type: "error", text: `Unknown command: ${command}` }));
     }
   }
 

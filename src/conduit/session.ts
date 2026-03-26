@@ -24,6 +24,7 @@ export interface SessionOptions {
   channelId: string;
   workingDirectory?: string;
   maxTurns?: number;
+  model?: string;
   disallowedTools?: string[];
 }
 
@@ -113,7 +114,17 @@ export class SessionManager {
       "--include-partial-messages",
       "--permission-mode", "bypassPermissions",
       "--append-system-prompt",
-      "CRITICAL: You are running inside the claude-assist Conduit. NEVER run commands that stop, restart, or modify the Conduit service (systemctl, kill, pkill targeting claude-assist or this process). NEVER modify .env, systemd service files, or the claude-assist source code. You will kill yourself.",
+      `CRITICAL: You are running inside the claude-assist Conduit. NEVER run commands that stop, restart, or modify the Conduit service (systemctl, kill, pkill targeting claude-assist or this process). NEVER modify .env, systemd service files, or the claude-assist source code. You will kill yourself.
+
+SCHEDULED TASKS: You can create scheduled or one-shot tasks that send results to the user's Telegram. Use the task CLI:
+
+  bun ${process.cwd()}/bin/task-cli.ts create --name "..." --prompt "..." --user "<telegram_user_id>" --schedule "<cron>" | --run-at "<ISO datetime or unix ms>" [--strategy resume|fresh] [--notify always|auto|never] [--context-files '["path"]'] [--cwd "/path"] [--max-turns 5]
+  bun ${process.cwd()}/bin/task-cli.ts list [--enabled]
+  bun ${process.cwd()}/bin/task-cli.ts get <id>
+  bun ${process.cwd()}/bin/task-cli.ts update <id> [--name ...] [--enabled true|false] [--schedule ...] [--run-at ...] [--prompt ...]
+  bun ${process.cwd()}/bin/task-cli.ts delete <id>
+
+For recurring tasks ("check X every morning"), use --schedule with standard 5-field cron expressions. For one-shot tasks ("do X at 3pm tomorrow"), use --run-at with an ISO datetime — these auto-disable after firing. Strategy "resume" keeps session context across runs; "fresh" starts clean each time. Notify controls when the user gets a Telegram notification: "always" (default), "auto" (you decide — include <notify>true</notify> or <notify>false</notify> at the start of your response to control whether the user is notified; output is always logged regardless), "never" (log only). Context files are read at fire time.`,
     ];
 
     // Resume from persisted session if available
@@ -121,6 +132,10 @@ export class SessionManager {
     if (persisted?.sessionId) {
       args.push("--resume", persisted.sessionId);
       console.log(`[session] Resuming session ${persisted.sessionId} for ${channelId}`);
+    }
+
+    if (options.model) {
+      args.push("--model", options.model);
     }
 
     if (options.maxTurns) {

@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 
 import { SessionManager, Router, TelegramChannel, WebSocketChannel, closeDb } from "../src/conduit";
+import { TaskScheduler } from "../src/conduit/scheduler";
 import { ViewServer } from "../src/views/server";
 import { install, serviceCommand, statusCommand, logsCommand } from "../src/service/systemd";
 import { sdReady, sdStopping, startWatchdog } from "../src/service/watchdog";
@@ -75,6 +76,11 @@ async function start() {
     router.addChannel(edgeRelay);
   }
 
+  // Start task scheduler
+  const scheduler = new TaskScheduler({ sessionManager, telegram });
+  router.setScheduler(scheduler);
+  scheduler.start();
+
   // Prune idle sessions every 5 minutes
   setInterval(() => {
     const pruned = sessionManager.pruneIdle();
@@ -87,6 +93,7 @@ async function start() {
   const shutdown = async () => {
     console.log("\n[conduit] Shutting down...");
     sdStopping();
+    scheduler.stop();
     tunnel?.manager.stop();
     if (edgeRelay) await edgeRelay.stop();
     await router.stop();
