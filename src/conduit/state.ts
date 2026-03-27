@@ -27,8 +27,31 @@ function db(): Database {
     )
   `);
 
+  _db.run(`
+    CREATE TABLE IF NOT EXISTS processed_emails (
+      email_id TEXT PRIMARY KEY,
+      processed_at INTEGER NOT NULL DEFAULT (unixepoch('now', 'subsec') * 1000)
+    )
+  `);
+
   console.log(`[state] Database at ${DB_PATH}`);
   return _db;
+}
+
+// --- Processed emails (dedup for email agent) ---
+
+export function isEmailProcessed(emailId: string): boolean {
+  const row = db().query("SELECT 1 FROM processed_emails WHERE email_id = ?").get(emailId);
+  return !!row;
+}
+
+export function markEmailProcessed(emailId: string): void {
+  db().run("INSERT OR IGNORE INTO processed_emails (email_id) VALUES (?)", emailId);
+}
+
+export function cleanupOldEmails(maxAgeMs = 7 * 24 * 60 * 60 * 1000): void {
+  const cutoff = Date.now() - maxAgeMs;
+  db().run("DELETE FROM processed_emails WHERE processed_at < ?", cutoff);
 }
 
 export interface PersistedSession {
