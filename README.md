@@ -27,10 +27,11 @@ Paired with [Cairn](https://github.com/jimovonz/cairn), every conversation acros
 │                                                   │
 │  Scheduler ── Task CLI ── Scheduled Tasks (SQLite) │
 │  Email Agent ── Gmail Push ── Classification       │
+│  Location ── OwnTracks ── Geofences (SQLite)       │
 │  View Server ── GCE Edge ── HTTPS (SSL)           │
 └──────────────────────────────────────────────────┘
-         ↕                           ↕
-    Gmail Pub/Sub              Google Calendar
+         ↕                ↕              ↕
+    Gmail Pub/Sub    Google Calendar   OwnTracks
 ```
 
 1. **Message arrives** from any channel (Telegram, TUI, Remote TUI)
@@ -50,7 +51,8 @@ Paired with [Cairn](https://github.com/jimovonz/cairn), every conversation acros
 - **Streaming status** — Telegram shows what Claude is doing in real time (reading files, running commands, thinking). Edits one message in place, 5s throttle.
 - **Rich HTML views** — long responses rendered as styled pages served via GCE edge server (HTTPS). Interactive action buttons (button, select, checkbox, text) with POST-back routing.
 - **Scheduled tasks** — cron and one-shot scheduling with per-task model selection (Haiku for monitoring, Opus for analysis), LLM-controlled notifications (`auto` mode — Claude decides whether to alert), context files, Cairn memory queries, session strategies (fresh/resume), and reply-to routing.
-- **Email agent** — Gmail push notifications via Pub/Sub trigger instant email classification. Applies intelligent labels (`CA/` prefix), creates calendar events for time-sensitive items, only notifies for personally-addressed actionable emails. Silent for newsletters, marketing, automated.
+- **Email agent** — Gmail push notifications via Pub/Sub trigger instant email classification. Applies intelligent labels (`CA/` prefix), creates calendar events for time-sensitive items, only notifies for personally-addressed actionable emails. Silent for newsletters, marketing, automated. Deduplication via SQLite persistence survives restarts — processed emails tracked with 7-day retention.
+- **Location tracking** — OwnTracks GPS updates via edge server, stored in SQLite with accuracy/velocity/battery metadata. Named geofences with configurable radius, haversine distance calculations, automatic geofence matching on each update.
 - **Google API access** — Gmail (read/send/label/watch) and Calendar (create/list/free) available from any channel. Natural language calendar creation ("put a meeting with Dave on Thursday at 2pm").
 - **Session isolation** — each channel gets its own conversation context. Telegram chat doesn't bleed into TUI work.
 - **Message queuing** — rapid messages are queued per channel, preventing concurrent session corruption.
@@ -115,7 +117,8 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full architectural breakdown, des
 | **Calendar Helper** | `bin/gcal.py` | Google Calendar: create, list, today, free slots (OAuth, Python) |
 | **Telegram** | `src/conduit/channels/telegram/` | Grammy bot, status edits, typing indicator, task reply routing |
 | **WebSocket/TUI** | `src/conduit/channels/websocket/` | WebSocket channel for local and remote TUI clients |
-| **Edge Relay** | `src/service/edge-relay.ts` | Outbound WebSocket to GCE edge for NAT-friendly remote TUI access |
+| **Edge Relay** | `src/service/edge-relay.ts` | Outbound WebSocket to GCE edge for NAT-friendly remote TUI access, OwnTracks location forwarding |
+| **State** | `src/conduit/state.ts` | SQLite persistence — sessions, tasks, processed emails, locations, location history |
 | **Hooks** | `src/conduit/hooks.ts` | Cairn prompt/stop hook runners |
 | **View Renderer** | `src/views/renderer.ts` | Markdown-to-HTML with XSS prevention |
 | **View Server** | `src/views/server.ts` | Bun.serve() for HTML views, WebSocket, health endpoint, auto-cleanup |
@@ -144,12 +147,14 @@ Functional multi-channel assistant with Telegram, TUI, remote TUI access, and HT
 - [x] Cairn memory integration (prompt and stop hooks)
 - [x] Scheduled agent tasks — cron, one-shot, per-task model, LLM-controlled notifications, context files/queries, reply-to routing
 - [x] Centralized commands (`/tasks`, `/task`, `/clear`, `/context`, `/sessions`, `/help`) across all channels
-- [x] Email agent — Gmail push notifications, intelligent classification/labeling, auto calendar events, actionable-only alerts
+- [x] Email agent — Gmail push notifications, intelligent classification/labeling, auto calendar events, actionable-only alerts, dedup persistence
 - [x] Google API integration — Gmail (read/send/label), Calendar (CRUD), accessible from all channels via system prompt
+- [x] Location tracking — OwnTracks integration, geofences, location history
 - [x] SSL on GCE edge server (Let's Encrypt)
+- [x] Global operational docs — `CLAUDE-global.md` symlinked to `~/.claude/rules/` for cross-project Claude sessions
 
 **Planned:**
-- [ ] Todo system — natural language, time-aware reminders, location-aware
+- [ ] Location-aware features — reminders, context injection based on geofence transitions
 - [ ] Email drafting with review/approval flow (careful scoping required)
 - [ ] Generalised setup and configuration for wider accessibility
 

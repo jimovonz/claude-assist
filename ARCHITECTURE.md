@@ -39,13 +39,22 @@ claude-assist is a multi-channel AI assistant built on Claude Code. It wraps per
 │  │ Email Agent   │  │ View Server                │   │
 │  │ Gmail push    │  │ HTML views + action API    │   │
 │  │ Classify/label│  │ Bun.serve on :8099         │   │
-│  │ Calendar evts │  │ /api/action POST-back      │   │
+│  │ Dedup (SQLite)│  │ /api/action POST-back      │   │
+│  │ Calendar evts │  │                            │   │
 │  └───────────────┘  └────────────────────────────┘   │
+│                                                       │
+│  ┌───────────────┐                                   │
+│  │ Location      │                                   │
+│  │ OwnTracks GPS │                                   │
+│  │ Geofences     │                                   │
+│  │ History (1K)  │                                   │
+│  └───────────────┘                                   │
 │                                                       │
 │  ┌───────────────┐  ┌────────────────────────────┐   │
 │  │ Cairn Hooks   │  │ State (SQLite)             │   │
-│  │ Prompt + Stop │  │ Sessions, tasks, history   │   │
-│  └───────────────┘  └────────────────────────────┘   │
+│  │ Prompt + Stop │  │ Sessions, tasks, emails,   │   │
+│  └───────────────┘  │ locations, history          │   │
+│                      └────────────────────────────┘   │
 └──────────────────────────────────────────────────────┘
          ↕                    ↕                ↕
     Telegram             GCE Edge          Gmail Pub/Sub
@@ -83,6 +92,14 @@ Scheduled tasks support `notify: auto` mode where Claude decides whether the use
 
 Gmail push notifications via Google Pub/Sub arrive at the GCE edge server within seconds of inbox changes. The edge forwards via WebSocket to the conduit's EdgeRelay, which triggers the EmailAgent. This avoids the latency and cost of polling. Watch registration auto-renews every 3 days via a scheduled task.
 
+### Email dedup — SQLite not in-memory
+
+Processed email IDs are tracked in SQLite (not an in-memory Set) so dedup state survives service restarts. Entries have 7-day retention with automatic cleanup. Emails are marked as read after processing to prevent re-processing on next push.
+
+### Location tracking — OwnTracks via edge relay
+
+GPS updates from OwnTracks arrive via the edge server WebSocket as `type: "location"` messages. The EdgeRelay stores them in SQLite (`location_history`, last 1000 entries) and checks against named geofences. Named locations are CRUD-managed with slug IDs and configurable radii. Haversine distance used for matching.
+
 ### Interactive HTML views
 
 Views support `<action>` tags (button, select, checkbox, text) rendered as interactive forms in HTML. A single Submit collects all inputs and POSTs to `/api/action`. Actions route back to the originating session via `channelId` stored in the view index. TUI/CLI renders actions as numbered choices. The GCE edge server proxies action requests back to the conduit.
@@ -95,10 +112,10 @@ Views support `<action>` tags (button, select, checkbox, text) rendered as inter
 |------|---------|
 | `router.ts` | Channel interface, message queuing, command interception, view creation, Cairn hooks |
 | `session.ts` | SessionManager — spawns/manages persistent `claude -p` processes, resume, abort, model selection |
-| `state.ts` | SQLite persistence — sessions, scheduled tasks (CRUD, slug IDs, all fields) |
+| `state.ts` | SQLite persistence — sessions, scheduled tasks, processed emails (dedup), locations, location history |
 | `scheduler.ts` | TaskScheduler — 30s tick, cron parser, one-shot (runAt), fireTask, notify resolution |
 | `commands.ts` | Central `/tasks`, `/task`, `/clear`, `/context`, `/sessions`, `/help` handler |
-| `email-agent.ts` | EmailAgent — Gmail push processing, classification, labeling, calendar events |
+| `email-agent.ts` | EmailAgent — Gmail push processing, classification, labeling, calendar events, dedup persistence, mark-as-read |
 | `hooks.ts` | Cairn prompt/stop hook subprocess runners |
 | `index.ts` | Public exports |
 
@@ -114,7 +131,7 @@ Views support `<action>` tags (button, select, checkbox, text) rendered as inter
 
 | File | Purpose |
 |------|---------|
-| `edge-relay.ts` | Channel interface over WebSocket to GCE edge (handles TUI, actions, Gmail push) |
+| `edge-relay.ts` | Channel interface over WebSocket to GCE edge (handles TUI, actions, Gmail push, OwnTracks location updates) |
 | `tunnel.ts` | Cloudflare Tunnel management (legacy, optional) |
 | `watchdog.ts` | systemd watchdog via FFI |
 | `systemd.ts` | Service unit generation, install, status, logs |
@@ -162,6 +179,9 @@ Endpoints:
 
 - **Sessions**: SQLite in `~/.local/state/claude-assist/conduit.db` — channelId, sessionId, lastActivity
 - **Tasks**: Same SQLite DB — slug IDs, schedules, prompts, model, notify, contextFiles, contextQuery, runAt, lastRun
+- **Processed emails**: Same SQLite DB — email_id (PK), processed_at timestamp, 7-day retention with auto-cleanup
+- **Locations**: Same SQLite DB (lazy init) — named places with lat/lon/radius for geofencing
+- **Location history**: Same SQLite DB (lazy init) — GPS updates with accuracy/velocity/battery, capped at 1000 entries
 - **Gmail watch**: `~/.local/state/claude-assist/gmail-watch.json` — historyId, expiration
 - **Gmail history**: `~/.local/state/claude-assist/gmail-history-id.txt` — last processed historyId
 - **Views**: `views/index.json` — slug, title, URL, channelId (for action routing), capped at 100
@@ -169,15 +189,17 @@ Endpoints:
 
 ## Test Coverage
 
-486 tests across 24 files covering:
+529 tests across 27 files covering:
 - Cron parser (wildcards, steps, ranges, commas, day-of-week)
 - Task CRUD (slug IDs, dedup, all fields, one-shot, notify/model/skipCairn/contextQuery)
 - Scheduler integration (tick, fire, strategies, notify modes, force-notify, auto-disable, model passing)
 - Command handler (all commands, edge cases, isCommand validation)
 - Email agent (action parsing, notification extraction, configuration, script structure, context file)
+- Email dedup (isEmailProcessed, markEmailProcessed, cleanupOldEmails, retention, batch processing)
+- Location tracking (CRUD, slug IDs, geofence matching, haversine distance, boundary tests, history retention)
+- Telegram (throttling, chunking, status, sendDirect with chunking, allowlist)
 - Interactive views (action extraction, types, HTML rendering, stripMetadata, form output)
 - Router (message flow, hooks, views, metadata stripping, error handling)
 - Sessions (spawn, resume, abort, parsing, persistence)
-- Telegram (throttling, chunking, status)
 - WebSocket (auth, reconnect, commands)
 - Views (renderer, XSS, index management)

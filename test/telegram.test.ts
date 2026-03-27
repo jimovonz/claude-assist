@@ -324,3 +324,69 @@ describe("buildViewsListMarkdown", () => {
     expect(result).not.toContain("View 55");
   });
 });
+
+// =============================================================================
+// sendDirect
+//
+// Sends plain text directly to a Telegram chat ID, bypassing session routing.
+// Used by email agent for notifications. Must respect 4096 char limit.
+// =============================================================================
+
+describe("sendDirect", () => {
+  let channel: InstanceType<typeof TelegramChannel>;
+
+  beforeEach(() => {
+    resetMocks();
+    channel = new TelegramChannel({ botToken: "test-token" });
+  });
+
+  test("short message sends as single message", async () => {
+    await channel.sendDirect(12345, "Hello");
+    expect(sentMessages).toHaveLength(1);
+    expect(sentMessages[0].chatId).toBe(12345);
+    expect(sentMessages[0].text).toBe("Hello");
+  });
+
+  test("message under 4096 chars sends as single message", async () => {
+    const text = "Line\n".repeat(800); // ~4000 chars
+    await channel.sendDirect(42, text);
+    expect(sentMessages).toHaveLength(1);
+  });
+
+  test("message over 4096 chars is split into chunks", async () => {
+    const lines = Array.from({ length: 100 }, (_, i) => `Line ${i}: ${"x".repeat(50)}`);
+    const text = lines.join("\n"); // ~5800 chars
+    await channel.sendDirect(42, text);
+    expect(sentMessages.length).toBeGreaterThan(1);
+  });
+
+  test("no chunk exceeds 4096 characters", async () => {
+    const lines = Array.from({ length: 200 }, (_, i) => `Line ${i}: ${"x".repeat(50)}`);
+    const text = lines.join("\n");
+    await channel.sendDirect(42, text);
+    for (const msg of sentMessages) {
+      expect(msg.text.length).toBeLessThanOrEqual(4096);
+    }
+  });
+
+  test("all content is preserved across chunks", async () => {
+    const lines = Array.from({ length: 100 }, (_, i) => `DIRECT-${i}`);
+    const text = lines.join("\n");
+    await channel.sendDirect(42, text);
+    const reassembled = sentMessages.map(m => m.text).join("\n");
+    for (const line of lines) {
+      expect(reassembled).toContain(line);
+    }
+  });
+
+  test("empty text sends single empty message", async () => {
+    await channel.sendDirect(42, "");
+    expect(sentMessages).toHaveLength(1);
+    expect(sentMessages[0].text).toBe("");
+  });
+
+  test("takes numeric chatId, not string userId", async () => {
+    await channel.sendDirect(99999, "Test");
+    expect(sentMessages[0].chatId).toBe(99999);
+  });
+});
