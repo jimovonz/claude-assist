@@ -65,9 +65,11 @@ export class ConduitConnection extends EventEmitter {
     // Use /ws/tui for edge servers, /ws for direct conduit connection
     const wsPath = this.url.includes("localhost") || this.url.includes("127.0.0.1") ? "/ws" : "/ws/tui";
     const wsUrl = this.url.replace(/^http/, "ws") + wsPath;
+    console.error(`[tui-debug] Connecting to ${wsUrl}`);
     this.ws = new WebSocket(wsUrl);
 
     this.ws.onopen = () => {
+      console.error(`[tui-debug] WebSocket opened`);
       this.reconnectAttempts = 0;
       this._state = "authenticating";
       this.emit("state", this._state);
@@ -119,7 +121,8 @@ export class ConduitConnection extends EventEmitter {
       }
     };
 
-    this.ws.onclose = () => {
+    this.ws.onclose = (event) => {
+      console.error(`[tui-debug] WebSocket closed: code=${event.code} reason=${event.reason}`);
       this.ws = null;
       this._state = "disconnected";
       this.emit("state", this._state);
@@ -127,8 +130,8 @@ export class ConduitConnection extends EventEmitter {
       this.scheduleReconnect();
     };
 
-    this.ws.onerror = () => {
-      // onclose will fire after this
+    this.ws.onerror = (event: any) => {
+      console.error(`[tui-debug] WebSocket error:`, event.message || event.error || "unknown");
     };
   }
 
