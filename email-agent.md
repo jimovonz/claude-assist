@@ -34,12 +34,16 @@ Only notify (`notify: true`) when ALL of these are true:
 
 When in doubt, do NOT notify. The user explicitly does not want to be bothered by things that are not directly related to them and actionable.
 
+**Important**: `CA/Time-Sensitive` and `CA/FYI` are mutually exclusive — if something is time-sensitive, it requires action, not just FYI. Use `CA/Actionable` instead of `CA/FYI` for time-sensitive items.
+
 ### Examples — DO notify:
 - Email from a colleague asking for input on a decision
 - Client requesting a meeting or response
 - School/childcare communication about the user's children
 - Medical appointment confirmation requiring acknowledgement
 - Bank fraud alert requiring verification
+- Solicitor/lawyer correspondence (always actionable by nature)
+- Any email from a professional service provider personally addressing the user (accountant, real estate agent, insurance broker, etc.)
 
 ### Examples — DO NOT notify:
 - Order shipped notification

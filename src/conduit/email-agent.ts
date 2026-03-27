@@ -18,6 +18,7 @@ import type { SessionManager } from "./session";
 import type { TelegramChannel } from "./channels/telegram";
 import { stripMetadata } from "./router";
 import { runStopHook } from "./hooks";
+import { isEmailProcessed, markEmailProcessed, cleanupOldEmails } from "./state";
 
 const PYTHON = join(homedir(), "Projects", "cairn", ".venv", "bin", "python3");
 const BIN_DIR = join(import.meta.dir, "..", "..", "bin");
@@ -64,14 +65,15 @@ export class EmailAgent {
       // Save the latest historyId
       this.saveHistoryId(historyId);
 
-      // Fetch recent unread emails
-      const emails = await this.fetchUnread();
+      // Fetch recent unread emails, skip already-processed ones (persisted in SQLite)
+      const allEmails = await this.fetchUnread();
+      const emails = allEmails.filter((e: any) => !isEmailProcessed(e.id));
       if (!emails.length) {
-        console.log("[email-agent] No unread messages to process");
+        console.log(`[email-agent] No new messages (${allEmails.length} unread, all already processed)`);
         return;
       }
 
-      console.log(`[email-agent] Processing ${emails.length} unread message(s)`);
+      console.log(`[email-agent] Processing ${emails.length} new message(s) (${allEmails.length - emails.length} skipped)`);
 
       // Load context file for classification rules
       const context = this.loadContext();
@@ -145,17 +147,20 @@ After the JSON block, if any emails have notify:true, write a human-readable Tel
         await this.executeActions(actions);
       }
 
+      // Persist all processed email IDs to SQLite (survives restarts)
+      for (const email of emails) {
+        markEmailProcessed(email.id);
+      }
+      // Cleanup entries older than 7 days
+      cleanupOldEmails();
+
       // Send notification for actionable items
       const cleaned = stripMetadata(response);
       // Extract just the human-readable notification part (after the JSON block)
       const notificationText = this.extractNotification(cleaned);
       if (notificationText) {
-        await this.telegram.sendTaskResult(
-          this.telegramUserId,
-          "Email Agent",
-          notificationText,
-          this.channelId
-        );
+        const chatId = parseInt(this.telegramUserId);
+        await this.telegram.sendDirect(chatId, `📧 Email\n\n${notificationText}`);
       }
 
       // Run stop hook for memory capture
@@ -224,6 +229,10 @@ After the JSON block, if any emails have notify:true, write a human-readable Tel
           await this.runScript("gcal.py", args);
           console.log(`[email-agent] Created calendar event: "${evt.title}"`);
         }
+
+        // Mark as read so it won't be re-processed on next push
+        await this.runScript("gmail-label.py", ["mark-read", action.emailId]);
+        console.log(`[email-agent] Marked ${action.emailId} as read`);
       } catch (err) {
         console.error(`[email-agent] Action failed for ${action.emailId}:`, err);
       }

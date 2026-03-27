@@ -254,6 +254,25 @@ export class TelegramChannel implements Channel {
     if (chunk) await this.bot.api.sendMessage(chatId, chunk);
   }
 
+  async sendDirect(chatId: number, text: string) {
+    const maxLen = 4096;
+    if (text.length <= maxLen) {
+      await this.bot.api.sendMessage(chatId, text);
+    } else {
+      const lines = text.split("\n");
+      let chunk = "";
+      for (const line of lines) {
+        if (chunk.length + line.length + 1 > maxLen) {
+          if (chunk) await this.bot.api.sendMessage(chatId, chunk);
+          chunk = line;
+        } else {
+          chunk += (chunk ? "\n" : "") + line;
+        }
+      }
+      if (chunk) await this.bot.api.sendMessage(chatId, chunk);
+    }
+  }
+
   async replyWithView(userId: string, summary: string, viewUrl: string) {
     this.flushPending(userId);
     this.stopTyping(userId);
