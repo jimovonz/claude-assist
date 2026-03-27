@@ -316,6 +316,121 @@ export function deleteTask(id: string): boolean {
   return result.changes > 0;
 }
 
+// --- Locations (named places + geofences) ---
+
+let _locationTablesReady = false;
+function ensureLocationTables(): void {
+  if (_locationTablesReady) return;
+
+  db().run(`
+    CREATE TABLE IF NOT EXISTS locations (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      lat REAL NOT NULL,
+      lon REAL NOT NULL,
+      radius_m REAL NOT NULL DEFAULT 100,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch('now', 'subsec') * 1000)
+    )
+  `);
+
+  db().run(`
+    CREATE TABLE IF NOT EXISTS location_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      lat REAL NOT NULL,
+      lon REAL NOT NULL,
+      accuracy REAL,
+      velocity REAL,
+      battery REAL,
+      timestamp INTEGER NOT NULL,
+      received_at INTEGER NOT NULL DEFAULT (unixepoch('now', 'subsec') * 1000)
+    )
+  `);
+
+  _locationTablesReady = true;
+}
+
+export interface LocationDef {
+  id: string;
+  name: string;
+  lat: number;
+  lon: number;
+  radiusM: number;
+  createdAt: number;
+}
+
+export interface LocationUpdate {
+  lat: number;
+  lon: number;
+  accuracy?: number;
+  velocity?: number;
+  battery?: number;
+  timestamp: number;
+}
+
+function haversineM(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371000;
+  const toRad = (d: number) => d * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+export function createLocation(name: string, lat: number, lon: number, radiusM = 100): LocationDef {
+  ensureLocationTables();
+  const id = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").substring(0, 40);
+  db().run(
+    "INSERT OR REPLACE INTO locations (id, name, lat, lon, radius_m) VALUES (?, ?, ?, ?, ?)",
+    [id, name, lat, lon, radiusM]
+  );
+  return { id, name, lat, lon, radiusM, createdAt: Date.now() };
+}
+
+export function listLocations(): LocationDef[] {
+  ensureLocationTables();
+  const rows = db().query("SELECT * FROM locations ORDER BY name").all() as any[];
+  return rows.map(r => ({ id: r.id, name: r.name, lat: r.lat, lon: r.lon, radiusM: r.radius_m, createdAt: r.created_at }));
+}
+
+export function getLocation(id: string): LocationDef | null {
+  ensureLocationTables();
+  const row = db().query("SELECT * FROM locations WHERE id = ?").get(id) as any;
+  return row ? { id: row.id, name: row.name, lat: row.lat, lon: row.lon, radiusM: row.radius_m, createdAt: row.created_at } : null;
+}
+
+export function deleteLocation(id: string): boolean {
+  ensureLocationTables();
+  return db().run("DELETE FROM locations WHERE id = ?", [id]).changes > 0;
+}
+
+export function storeLocationUpdate(update: LocationUpdate): void {
+  ensureLocationTables();
+  db().run(
+    "INSERT INTO location_history (lat, lon, accuracy, velocity, battery, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+    [update.lat, update.lon, update.accuracy ?? null, update.velocity ?? null, update.battery ?? null, update.timestamp]
+  );
+  // Keep last 1000 entries
+  db().run("DELETE FROM location_history WHERE id NOT IN (SELECT id FROM location_history ORDER BY received_at DESC LIMIT 1000)");
+}
+
+export function getLatestLocation(): LocationUpdate | null {
+  ensureLocationTables();
+  const row = db().query("SELECT * FROM location_history ORDER BY received_at DESC LIMIT 1").get() as any;
+  return row ? { lat: row.lat, lon: row.lon, accuracy: row.accuracy, velocity: row.velocity, battery: row.battery, timestamp: row.timestamp } : null;
+}
+
+export function checkGeofences(lat: number, lon: number): LocationDef[] {
+  ensureLocationTables();
+  const locations = listLocations();
+  return locations.filter(loc => haversineM(lat, lon, loc.lat, loc.lon) <= loc.radiusM);
+}
+
+export function distanceToLocation(lat: number, lon: number, locationId: string): number | null {
+  const loc = getLocation(locationId);
+  if (!loc) return null;
+  return haversineM(lat, lon, loc.lat, loc.lon);
+}
+
 export function closeDb(): void {
   _db?.close();
   _db = null;

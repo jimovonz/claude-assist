@@ -125,6 +125,12 @@ export class EdgeRelay implements Channel {
       return;
     }
 
+    // OwnTracks location updates don't have userId
+    if (data.type === "location") {
+      this.handleLocationUpdate(data);
+      return;
+    }
+
     const userId = data.userId;
     if (!userId) return;
 
@@ -201,6 +207,23 @@ export class EdgeRelay implements Channel {
 
     console.log(`[edge-relay] Action "${actionId}" from view ${viewId} → ${view.channelId}`);
     await this.onAction(view.channelId, actionId, label ?? actionId, value);
+  }
+
+  private handleLocationUpdate(data: any) {
+    const { lat, lon, timestamp, velocity, accuracy, battery } = data;
+    if (lat == null || lon == null) return;
+
+    const { storeLocationUpdate, checkGeofences } = require("../conduit/state") as typeof import("../conduit/state");
+
+    storeLocationUpdate({ lat, lon, accuracy, velocity, battery, timestamp: timestamp ?? Math.floor(Date.now() / 1000) });
+
+    const matched = checkGeofences(lat, lon);
+    if (matched.length > 0) {
+      const names = matched.map(l => l.name).join(", ");
+      console.log(`[edge-relay] Location: ${lat.toFixed(4)}, ${lon.toFixed(4)} — at ${names}`);
+    } else {
+      console.log(`[edge-relay] Location: ${lat.toFixed(4)}, ${lon.toFixed(4)} — no geofence match`);
+    }
   }
 
   // --- Channel interface ---
