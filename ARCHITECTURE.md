@@ -189,7 +189,7 @@ Endpoints:
 
 ## Test Coverage
 
-529 tests across 27 files covering:
+539 tests across 27 files covering:
 - Cron parser (wildcards, steps, ranges, commas, day-of-week)
 - Task CRUD (slug IDs, dedup, all fields, one-shot, notify/model/skipCairn/contextQuery)
 - Scheduler integration (tick, fire, strategies, notify modes, force-notify, auto-disable, model passing)

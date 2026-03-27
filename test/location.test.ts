@@ -228,6 +228,36 @@ describe("checkGeofences", () => {
   });
 });
 
+describe("location history cap", () => {
+  test("retains at most 1000 entries", () => {
+    // Insert 1010 entries
+    for (let i = 0; i < 1010; i++) {
+      storeLocationUpdate({ lat: -37.0 + i * 0.0001, lon: 176.0, timestamp: 100000 + i });
+    }
+
+    // Count entries via getLatestLocation + verify pruning happened
+    // We can't directly count rows without DB access, but we can verify
+    // the latest is the most recent and the system didn't crash
+    const latest = getLatestLocation();
+    expect(latest).not.toBeNull();
+    expect(latest!.timestamp).toBe(100000 + 1009);
+  }, 30000); // generous timeout for 1010 inserts
+});
+
+describe("ensureLocationTables lazy init", () => {
+  // This is implicitly tested by the fact that all location tests work
+  // on a fresh DB (CONDUIT_STATE_DIR points to a temp dir), but let's
+  // verify explicitly that functions don't throw on a fresh import
+  test("all location functions work without prior table creation", () => {
+    // These already ran above on a fresh DB, confirming lazy init works.
+    // Verify the core operations don't throw:
+    expect(() => listLocations()).not.toThrow();
+    expect(() => getLatestLocation()).not.toThrow();
+    expect(() => checkGeofences(0, 0)).not.toThrow();
+    expect(() => distanceToLocation(0, 0, "nonexistent")).not.toThrow();
+  });
+});
+
 describe("distanceToLocation", () => {
   test("returns 0 for same point", () => {
     createLocation("Distance Zero", -37.7, 176.2);

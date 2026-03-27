@@ -10,7 +10,11 @@
   "scripts": {
     "start": "bun run bin/claude-assist.ts start",
     "dev": "bun run --watch bin/claude-assist.ts start",
-    "tui": "bun run bin/claude-tui.ts"
+    "tui": "bun run bin/claude-tui.ts",
+    "test": "bun test"
+  },
+  "engines": {
+    "bun": ">=1.1.0"
   },
   "devDependencies": {
     "@types/bun": "latest",

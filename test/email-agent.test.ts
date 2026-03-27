@@ -40,10 +40,15 @@ function createMockSessionManager(response = "processed") {
 
 function createMockTelegram() {
   const sent: { userId: string; taskName: string; text: string; channelId: string }[] = [];
+  const directMessages: { chatId: number; text: string }[] = [];
   return {
     sent,
+    directMessages,
     sendTaskResult: mock(async (userId: string, taskName: string, text: string, channelId: string) => {
       sent.push({ userId, taskName, text, channelId });
+    }),
+    sendDirect: mock(async (chatId: number, text: string) => {
+      directMessages.push({ chatId, text });
     }),
     reply: mock(async () => {}),
   };
@@ -209,6 +214,105 @@ describe("EmailAgent", () => {
       });
       expect((agent as any).channelId).toBe("email-agent:processor");
     });
+  });
+});
+
+describe("EmailAgent dedup integration", () => {
+  // Tests the full flow: handlePush filters already-processed emails
+  // and marks new ones as processed after completion.
+
+  test("skips already-processed emails and only sends new ones to Claude", async () => {
+    const { markEmailProcessed, isEmailProcessed, closeDb: _ } = await import("../src/conduit/state");
+
+    const emails = [
+      { id: "old-001", from: "a@test.com", to: "me@test.com", subject: "Old", date: "2026-03-27", snippet: "Old email", labels: ["INBOX"], body: "old body" },
+      { id: "new-001", from: "b@test.com", to: "me@test.com", subject: "New", date: "2026-03-27", snippet: "New email", labels: ["INBOX"], body: "new body" },
+      { id: "new-002", from: "c@test.com", to: "me@test.com", subject: "Also New", date: "2026-03-27", snippet: "Another", labels: ["INBOX"], body: "another body" },
+    ];
+
+    // Pre-mark old-001 as processed
+    markEmailProcessed("old-001");
+
+    const response = `\`\`\`json
+{"actions": [
+  {"emailId": "new-001", "classification": "Personal", "labels": ["CA/Personal"], "notify": false, "notifyReason": "", "calendarEvent": null, "summary": "Test"},
+  {"emailId": "new-002", "classification": "Work", "labels": ["CA/Work"], "notify": false, "notifyReason": "", "calendarEvent": null, "summary": "Test2"}
+]}
+\`\`\``;
+
+    const sm = createMockSessionManager(response);
+    const tg = createMockTelegram();
+    const agent = new EmailAgent({
+      sessionManager: sm as any,
+      telegram: tg as any,
+      telegramUserId: "12345",
+    });
+
+    // Override fetchUnread to return our test emails
+    (agent as any).fetchUnread = async () => emails;
+    // Override runScript to no-op (don't call real gmail-label.py)
+    (agent as any).runScript = async () => "";
+
+    await agent.handlePush("test@example.com", "99999");
+
+    // Claude should only have seen new-001 and new-002 (not old-001)
+    expect(sm.calls).toHaveLength(1);
+    const prompt = sm.calls[0].message;
+    expect(prompt).not.toContain("old-001");
+    expect(prompt).toContain("new-001");
+    expect(prompt).toContain("new-002");
+
+    // All processed emails should now be marked
+    expect(isEmailProcessed("new-001")).toBe(true);
+    expect(isEmailProcessed("new-002")).toBe(true);
+    expect(isEmailProcessed("old-001")).toBe(true); // was already marked
+  });
+
+  test("returns early when all emails already processed", async () => {
+    const { markEmailProcessed } = await import("../src/conduit/state");
+
+    markEmailProcessed("seen-a");
+    markEmailProcessed("seen-b");
+
+    const sm = createMockSessionManager();
+    const tg = createMockTelegram();
+    const agent = new EmailAgent({
+      sessionManager: sm as any,
+      telegram: tg as any,
+      telegramUserId: "12345",
+    });
+
+    (agent as any).fetchUnread = async () => [
+      { id: "seen-a", from: "x@test.com", to: "me@test.com", subject: "X", date: "2026-03-27", snippet: "", labels: [], body: "" },
+      { id: "seen-b", from: "y@test.com", to: "me@test.com", subject: "Y", date: "2026-03-27", snippet: "", labels: [], body: "" },
+    ];
+
+    await agent.handlePush("test@example.com", "100");
+
+    // No Claude session should have been created
+    expect(sm.calls).toHaveLength(0);
+  });
+
+  test("marks emails as processed even when no actions returned", async () => {
+    const { isEmailProcessed } = await import("../src/conduit/state");
+
+    const sm = createMockSessionManager("No actionable emails found.");
+    const tg = createMockTelegram();
+    const agent = new EmailAgent({
+      sessionManager: sm as any,
+      telegram: tg as any,
+      telegramUserId: "12345",
+    });
+
+    (agent as any).fetchUnread = async () => [
+      { id: "noaction-001", from: "z@test.com", to: "me@test.com", subject: "Z", date: "2026-03-27", snippet: "", labels: [], body: "" },
+    ];
+    (agent as any).runScript = async () => "";
+
+    await agent.handlePush("test@example.com", "101");
+
+    // Email should still be marked even though no JSON actions were parsed
+    expect(isEmailProcessed("noaction-001")).toBe(true);
   });
 });
 

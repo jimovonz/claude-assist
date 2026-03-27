@@ -457,4 +457,6 @@ export function distanceToLocation(lat: number, lon: number, locationId: string)
 export function closeDb(): void {
   _db?.close();
   _db = null;
+  _tasksTableReady = false;
+  _locationTablesReady = false;
 }

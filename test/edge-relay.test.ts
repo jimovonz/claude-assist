@@ -1,4 +1,12 @@
-import { test, expect, describe } from "bun:test";
+import { test, expect, describe, afterAll } from "bun:test";
+import { mkdtempSync, rmSync } from "fs";
+import { join } from "path";
+import { tmpdir } from "os";
+
+// Isolated state DB for location integration tests
+const TEST_STATE_DIR = mkdtempSync(join(tmpdir(), "claude-assist-edge-relay-"));
+process.env.CONDUIT_STATE_DIR = TEST_STATE_DIR;
+
 import { EdgeRelay } from "../src/service/edge-relay";
 
 // =============================================================================
@@ -114,5 +122,102 @@ describe("EdgeRelay Channel interface", () => {
   test("sendTyping is a no-op", async () => {
     const relay = new EdgeRelay({ edgeUrl: "https://example.com" });
     await relay.sendTyping("user1");
+  });
+});
+
+// =============================================================================
+// handleLocationUpdate integration
+//
+// Tests the full flow: OwnTracks message → parse → storeLocationUpdate →
+// checkGeofences. Uses real SQLite state module via CONDUIT_STATE_DIR.
+// =============================================================================
+
+const {
+  createLocation,
+  getLatestLocation,
+  listLocations,
+  closeDb,
+} = await import("../src/conduit/state");
+
+afterAll(() => {
+  closeDb();
+  rmSync(TEST_STATE_DIR, { recursive: true, force: true });
+});
+
+describe("handleLocationUpdate integration", () => {
+  test("stores location update and it appears in history", () => {
+    const relay = new EdgeRelay({ edgeUrl: "https://example.com" });
+    const handler = (relay as any).handleLocationUpdate.bind(relay);
+
+    handler({ lat: -37.7, lon: 176.2, accuracy: 5, timestamp: 1000000 });
+
+    const latest = getLatestLocation();
+    expect(latest).not.toBeNull();
+    expect(latest!.lat).toBe(-37.7);
+    expect(latest!.lon).toBe(176.2);
+    expect(latest!.accuracy).toBe(5);
+  });
+
+  test("skips update with missing lat/lon", () => {
+    const relay = new EdgeRelay({ edgeUrl: "https://example.com" });
+    const handler = (relay as any).handleLocationUpdate.bind(relay);
+
+    const before = getLatestLocation();
+    handler({ lon: 176.2 }); // no lat
+    handler({ lat: -37.7 }); // no lon
+    handler({}); // neither
+    const after = getLatestLocation();
+
+    // Latest should not have changed (still the one from prior test)
+    expect(after!.lat).toBe(before!.lat);
+  });
+
+  test("generates timestamp when not provided", () => {
+    const relay = new EdgeRelay({ edgeUrl: "https://example.com" });
+    const handler = (relay as any).handleLocationUpdate.bind(relay);
+
+    const now = Math.floor(Date.now() / 1000);
+    handler({ lat: -36.0, lon: 175.0 }); // no timestamp
+
+    const latest = getLatestLocation();
+    expect(latest!.timestamp).toBeGreaterThanOrEqual(now - 2);
+    expect(latest!.timestamp).toBeLessThanOrEqual(now + 2);
+  });
+
+  test("logs geofence match when inside radius", () => {
+    const relay = new EdgeRelay({ edgeUrl: "https://example.com" });
+    const handler = (relay as any).handleLocationUpdate.bind(relay);
+
+    // Create a geofence and send update inside it
+    createLocation("Edge Test Home", -37.7, 176.2, 500);
+
+    // Capture console.log
+    const logs: string[] = [];
+    const origLog = console.log;
+    console.log = (...args: any[]) => logs.push(args.join(" "));
+
+    handler({ lat: -37.7, lon: 176.2, timestamp: 2000000 });
+
+    console.log = origLog;
+
+    const matchLog = logs.find(l => l.includes("Edge Test Home"));
+    expect(matchLog).toBeDefined();
+  });
+
+  test("logs no match when outside all geofences", () => {
+    const relay = new EdgeRelay({ edgeUrl: "https://example.com" });
+    const handler = (relay as any).handleLocationUpdate.bind(relay);
+
+    const logs: string[] = [];
+    const origLog = console.log;
+    console.log = (...args: any[]) => logs.push(args.join(" "));
+
+    // Point far from any defined location
+    handler({ lat: 0, lon: 0, timestamp: 3000000 });
+
+    console.log = origLog;
+
+    const noMatchLog = logs.find(l => l.includes("no geofence match"));
+    expect(noMatchLog).toBeDefined();
   });
 });
