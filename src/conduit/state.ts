@@ -369,6 +369,20 @@ function ensureLocationTables(): void {
     )
   `);
 
+  db().run(`
+    CREATE TABLE IF NOT EXISTS todos (
+      id TEXT PRIMARY KEY,
+      text TEXT NOT NULL,
+      reminder_time INTEGER,
+      location_hint TEXT,
+      source TEXT NOT NULL DEFAULT 'manual',
+      done INTEGER NOT NULL DEFAULT 0,
+      user_id TEXT NOT NULL,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch('now', 'subsec') * 1000),
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch('now', 'subsec') * 1000)
+    )
+  `);
+
   _locationTablesReady = true;
 }
 
@@ -452,6 +466,79 @@ export function distanceToLocation(lat: number, lon: number, locationId: string)
   const loc = getLocation(locationId);
   if (!loc) return null;
   return haversineM(lat, lon, loc.lat, loc.lon);
+}
+
+// --- Todos (Personal Reminder System) ---
+
+export interface TodoItem {
+  id: string;
+  text: string;
+  reminderTime?: number;
+  locationHint?: string;
+  source: "manual" | "email" | "calendar" | "telegram";
+  done: boolean;
+  userId: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export function addTodo(text: string, userId: string, options?: { reminderTime?: number; locationHint?: string; source?: string }): TodoItem {
+  const id = crypto.randomUUID().slice(0, 12);
+  const now = Date.now();
+  const source = options?.source ?? "manual";
+
+  db().run(
+    `INSERT INTO todos (id, text, reminder_time, location_hint, source, user_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [id, text, options?.reminderTime ?? null, options?.locationHint ?? null, source, userId, now, now]
+  );
+
+  return {
+    id,
+    text,
+    reminderTime: options?.reminderTime,
+    locationHint: options?.locationHint,
+    source: source as any,
+    done: false,
+    userId,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+export function listTodos(userId: string, includeFinished = false): TodoItem[] {
+  const query = includeFinished
+    ? "SELECT * FROM todos WHERE user_id = ? ORDER BY reminder_time, created_at"
+    : "SELECT * FROM todos WHERE user_id = ? AND done = 0 ORDER BY reminder_time, created_at";
+
+  const rows = db().query(query).all(userId) as any[];
+  return rows.map(r => ({
+    id: r.id,
+    text: r.text,
+    reminderTime: r.reminder_time,
+    locationHint: r.location_hint,
+    source: r.source,
+    done: r.done === 1,
+    userId: r.user_id,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  }));
+}
+
+export function markTodoDone(todoId: string, userId: string): boolean {
+  const result = db().run(
+    "UPDATE todos SET done = 1, updated_at = ? WHERE id = ? AND user_id = ?",
+    [Date.now(), todoId, userId]
+  );
+  return result.changes > 0;
+}
+
+export function deleteTodo(todoId: string, userId: string): boolean {
+  const result = db().run(
+    "DELETE FROM todos WHERE id = ? AND user_id = ?",
+    [todoId, userId]
+  );
+  return result.changes > 0;
 }
 
 export function closeDb(): void {

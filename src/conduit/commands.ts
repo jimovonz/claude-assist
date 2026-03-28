@@ -1,5 +1,5 @@
 import type { SessionManager } from "./session";
-import { listTasks, getTask, updateTask, deleteTask, type TaskDef } from "./state";
+import { listTasks, getTask, updateTask, deleteTask, type TaskDef, addTodo, listTodos, markTodoDone, deleteTodo, type TodoItem } from "./state";
 import type { TaskScheduler } from "./scheduler";
 
 export interface CommandResult {
@@ -33,6 +33,8 @@ export function handleCommand(text: string, ctx: CommandContext): CommandResult 
       return cmdTasks();
     case "/task":
       return cmdTask(parts.slice(1), ctx);
+    case "/todo":
+      return cmdTodo(parts.slice(1), ctx);
     case "/help":
       return cmdHelp();
     default:
@@ -142,6 +144,74 @@ function cmdTask(args: string[], ctx: CommandContext): CommandResult {
   }
 }
 
+function cmdTodo(args: string[], ctx: CommandContext): CommandResult {
+  if (args.length === 0) {
+    return cmdTodoList(ctx);
+  }
+
+  const action = args[0].toLowerCase();
+  switch (action) {
+    case "add":
+    case "a": {
+      const text = args.slice(1).join(" ");
+      if (!text) return { text: "Usage: /todo add <text>" };
+      return cmdTodoAdd(text, ctx);
+    }
+    case "list":
+    case "ls": {
+      return cmdTodoList(ctx);
+    }
+    case "done":
+    case "d": {
+      if (args.length < 2) return { text: "Usage: /todo done <id>" };
+      return cmdTodoDone(args[1], ctx);
+    }
+    case "delete":
+    case "del": {
+      if (args.length < 2) return { text: "Usage: /todo delete <id>" };
+      return cmdTodoDelete(args[1], ctx);
+    }
+    default:
+      return { text: "Usage: /todo [add|list|done|delete] ..." };
+  }
+}
+
+function cmdTodoAdd(text: string, ctx: CommandContext): CommandResult {
+  const todo = addTodo(text, ctx.userId);
+  return {
+    text: `Added: ${todo.text}${todo.reminderTime ? ` (reminder at ${new Date(todo.reminderTime).toLocaleTimeString()})` : ""}`,
+    data: todo,
+  };
+}
+
+function cmdTodoList(ctx: CommandContext): CommandResult {
+  const todos = listTodos(ctx.userId, false);
+  if (todos.length === 0) {
+    return { text: "No active todos.", data: [] };
+  }
+  const lines = todos.map((t, i) => {
+    const reminder = t.reminderTime ? ` @ ${new Date(t.reminderTime).toLocaleTimeString()}` : "";
+    const location = t.locationHint ? ` (${t.locationHint})` : "";
+    return `  [${t.id}] ${t.text}${reminder}${location}`;
+  });
+  return {
+    text: `Todos (${todos.length}):\n${lines.join("\n")}`,
+    data: todos,
+  };
+}
+
+function cmdTodoDone(todoId: string, ctx: CommandContext): CommandResult {
+  const success = markTodoDone(todoId, ctx.userId);
+  if (!success) return { text: `Todo "${todoId}" not found.` };
+  return { text: `Done: ${todoId}` };
+}
+
+function cmdTodoDelete(todoId: string, ctx: CommandContext): CommandResult {
+  const success = deleteTodo(todoId, ctx.userId);
+  if (!success) return { text: `Todo "${todoId}" not found.` };
+  return { text: `Deleted: ${todoId}` };
+}
+
 function cmdHelp(): CommandResult {
   const text = [
     "Available commands:",
@@ -150,6 +220,11 @@ function cmdHelp(): CommandResult {
     "  /sessions   — List all active sessions",
     "  /tasks      — List all scheduled tasks",
     "  /task <id> <enable|disable|delete|run> — Manage a task",
+    "  /todo       — Manage personal todos/reminders",
+    "    /todo add <text>   — Add a todo",
+    "    /todo list         — Show active todos",
+    "    /todo done <id>    — Mark as done",
+    "    /todo delete <id>  — Delete a todo",
     "  /help       — Show this message",
   ].join("\n");
   return { text };
