@@ -34,6 +34,20 @@ function db(): Database {
     )
   `);
 
+  _db.run(`
+    CREATE TABLE IF NOT EXISTS todos (
+      id TEXT PRIMARY KEY,
+      text TEXT NOT NULL,
+      reminder_time INTEGER,
+      location_hint TEXT,
+      source TEXT NOT NULL DEFAULT 'manual',
+      done INTEGER NOT NULL DEFAULT 0,
+      user_id TEXT NOT NULL,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch('now', 'subsec') * 1000),
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch('now', 'subsec') * 1000)
+    )
+  `);
+
   console.log(`[state] Database at ${DB_PATH}`);
   return _db;
 }
