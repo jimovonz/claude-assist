@@ -26,6 +26,7 @@ export interface SessionOptions {
   maxTurns?: number;
   model?: string;
   disallowedTools?: string[];
+  env?: Record<string, string>;
 }
 
 export interface Session {
@@ -171,6 +172,7 @@ GMAIL: You can read and manage the user's Gmail. Use the Python helpers:
       stdin: "pipe",
       stdout: "pipe",
       stderr: "pipe",
+      ...(options.env ? { env: { ...process.env, ...options.env } } : {}),
     });
 
     const reader = proc.stdout!.getReader();
@@ -315,9 +317,11 @@ GMAIL: You can read and manage the user's Gmail. Use the Python helpers:
     if (session) {
       session.proc.kill();
       this.sessions.delete(channelId);
-      return true;
     }
-    return false;
+    // Remove from both in-memory state and SQLite
+    this.persistedState.delete(channelId);
+    removePersistedSession(channelId);
+    return !!session;
   }
 
   getUsage(channelId: string): UsageInfo | undefined {

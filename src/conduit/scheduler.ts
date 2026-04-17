@@ -151,6 +151,7 @@ export class TaskScheduler {
         workingDirectory: task.workingDirectory ?? undefined,
         maxTurns: task.maxTurns,
         model: task.model ?? undefined,
+        ...(task.skipCairn ? { env: { CAIRN_MODE: "read-only" } } : {}),
       })) {
         if (event.type === "result") {
           response = event.text;
@@ -165,7 +166,8 @@ export class TaskScheduler {
       const output = stripMetadata(response);
 
       if (shouldNotify && output) {
-        await this.telegram.sendTaskResult(task.telegramUserId, task.name, output, channelId);
+        const dmChatId = task.notifyTarget === "dm" ? parseInt(task.telegramUserId) : undefined;
+        await this.telegram.sendTaskResult(task.telegramUserId, task.name, output, channelId, dmChatId);
       } else if (output) {
         console.log(`[scheduler] Task "${task.name}" (${task.id}) — notification suppressed`);
       } else {
@@ -181,8 +183,8 @@ export class TaskScheduler {
         ...(task.runAt ? { enabled: false } : {}),
       });
 
-      // Run stop hook for memory capture
-      if (response.length > 0) {
+      // Run stop hook for memory capture (skip for read-only cairn tasks)
+      if (response.length > 0 && !task.skipCairn) {
         await runStopHook(sessionId, response, task.workingDirectory ?? undefined);
       }
 
