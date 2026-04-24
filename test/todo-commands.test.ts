@@ -151,6 +151,6 @@ describe("realistic user workflows", () => {
     expect(withTimes.length).toBe(3);
 
     // Todos should be ordered by reminder time
-    expect(withTimes[0].reminderTime).toBeLessThanOrEqual(withTimes[1].reminderTime!);
+    expect(withTimes[0]!.reminderTime).toBeLessThanOrEqual(withTimes[1]!.reminderTime!);
   });
 });

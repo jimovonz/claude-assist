@@ -132,11 +132,11 @@ describe("loadViewIndex", () => {
     } else {
       // Index at cap — newest entry should be first (replaced oldest)
       expect(after.length).toBe(100);
-      expect(after[0].title).toBe("Index Entry");
+      expect(after[0]!.title).toBe("Index Entry");
     }
 
     // Clean up the file
-    const slug = after[0].slug;
+    const slug = after[0]!.slug;
     const viewsDir = join(import.meta.dir, "..", "views");
     try { rmSync(join(viewsDir, `${slug}.html`)); } catch {}
   });
@@ -146,18 +146,18 @@ describe("loadViewIndex", () => {
     const index = loadViewIndex();
     const latest = index[0]; // newest first
 
-    expect(latest.slug).toBeDefined();
-    expect(latest.title).toBe("Field Check");
-    expect(typeof latest.url).toBe("string");
-    expect(typeof latest.localUrl).toBe("string");
-    expect(typeof latest.createdAt).toBe("string");
-    expect(latest.channel).toBe("test");
-    expect(latest.userId).toBe("user1");
-    expect(typeof latest.chars).toBe("number");
+    expect(latest!.slug).toBeDefined();
+    expect(latest!.title).toBe("Field Check");
+    expect(typeof latest!.url).toBe("string");
+    expect(typeof latest!.localUrl).toBe("string");
+    expect(typeof latest!.createdAt).toBe("string");
+    expect(latest!.channel).toBe("test");
+    expect(latest!.userId).toBe("user1");
+    expect(typeof latest!.chars).toBe("number");
 
     // Clean up
     const viewsDir = join(import.meta.dir, "..", "views");
-    try { rmSync(join(viewsDir, `${latest.slug}.html`)); } catch {}
+    try { rmSync(join(viewsDir, `${latest!.slug}.html`)); } catch {}
   });
 });
 

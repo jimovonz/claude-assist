@@ -1,6 +1,6 @@
 import { Bot } from "grammy";
-import type { Channel } from "../router";
-import type { SessionManager } from "../session";
+import type { Channel } from "../../router";
+import type { SessionManager } from "../../session";
 import { loadViewIndex, createViewAsync, type ViewRecord } from "../../../views/renderer";
 
 const EDGE_URL = process.env.EDGE_URL ?? "";
@@ -307,8 +307,8 @@ export class TelegramChannel implements Channel {
     this.pendingStatus.delete(userId);
   }
 
-  async sendTaskResult(userId: string, taskName: string, text: string, taskChannelId: string) {
-    const chatId = parseInt(userId);
+  async sendTaskResult(userId: string, taskName: string, text: string, taskChannelId: string, dmChatId?: number) {
+    const chatId = dmChatId ?? parseInt(userId);
     const header = `📋 Scheduled Task: ${taskName}`;
     const full = `${header}\n\n${text}`;
     const maxLen = 4096;
@@ -330,7 +330,7 @@ export class TelegramChannel implements Channel {
         const baseUrl = EDGE_URL || "http://localhost:8099";
         const viewUrl = edgeUrl ?? `${baseUrl}/view/${token}`;
         // Send summary + view link
-        const firstPara = text.split("\n\n")[0];
+        const firstPara = text.split("\n\n")[0]!;
         const summary = firstPara.length > 200 ? firstPara.substring(0, 200) + "..." : firstPara;
         const msg = await this.bot.api.sendMessage(chatId, `${header}\n\n${summary}\n\n📄 Full report: ${viewUrl}`);
         lastMsgId = msg.message_id;

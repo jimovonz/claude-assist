@@ -64,7 +64,7 @@ describe("status throttle flush", () => {
 
     // The deferred flush should have edited the message
     expect(editedMessages.length).toBeGreaterThanOrEqual(1);
-    const lastEdit = editedMessages[editedMessages.length - 1];
+    const lastEdit = editedMessages[editedMessages.length - 1]!;
     expect(lastEdit.text).toBe("Step 2");
 
     await channel.stop();
@@ -103,7 +103,7 @@ describe("status throttle flush", () => {
     expect(editTexts).not.toContain("Still working...");
 
     // Final message should be "Done!"
-    const lastSent = sentMessages[sentMessages.length - 1];
+    const lastSent = sentMessages[sentMessages.length - 1]!;
     expect(lastSent.text).toBe("Done!");
 
     await channel.stop();
@@ -118,7 +118,7 @@ describe("status throttle flush", () => {
     // Now send another status — should edit immediately (no timer needed)
     await channel.sendStatus("42", "Step 2");
     expect(editedMessages.length).toBeGreaterThanOrEqual(1);
-    const lastEdit = editedMessages[editedMessages.length - 1];
+    const lastEdit = editedMessages[editedMessages.length - 1]!;
     expect(lastEdit.text).toBe("Step 2");
 
     await channel.stop();

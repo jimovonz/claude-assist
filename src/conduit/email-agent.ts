@@ -193,7 +193,7 @@ After the JSON block, if any emails have notify:true, write a human-readable Tel
     if (!match) return [];
 
     try {
-      const parsed = JSON.parse(match[1]);
+      const parsed = JSON.parse(match[1]!);
       return parsed.actions ?? [];
     } catch (err) {
       console.error("[email-agent] Failed to parse actions JSON:", err);

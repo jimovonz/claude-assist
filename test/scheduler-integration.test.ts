@@ -96,14 +96,14 @@ describe("TaskScheduler", () => {
 
       // Session should have been called
       expect(sm.calls.length).toBe(1);
-      expect(sm.calls[0].channelId).toBe(`task:${taskId}`);
-      expect(sm.calls[0].message).toBe("Check something");
+      expect(sm.calls[0]!.channelId).toBe(`task:${taskId}`);
+      expect(sm.calls[0]!.message).toBe("Check something");
 
       // Telegram should have received the result
       expect(tg.sent.length).toBe(1);
-      expect(tg.sent[0].userId).toBe("99999");
-      expect(tg.sent[0].taskName).toBe("Test task");
-      expect(tg.sent[0].text).toBe("Task output here");
+      expect(tg.sent[0]!.userId).toBe("99999");
+      expect(tg.sent[0]!.taskName).toBe("Test task");
+      expect(tg.sent[0]!.text).toBe("Task output here");
 
       // Task should have lastRunAt updated
       const updated = getTask(taskId)!;
@@ -205,8 +205,8 @@ describe("TaskScheduler", () => {
       await Bun.sleep(300);
       scheduler.stop();
 
-      expect(sm.calls[0].message).toContain("<previous_run_output>");
-      expect(sm.calls[0].message).toContain("Previous result");
+      expect(sm.calls[0]!.message).toContain("<previous_run_output>");
+      expect(sm.calls[0]!.message).toContain("Previous result");
     });
   });
 
@@ -230,8 +230,8 @@ describe("TaskScheduler", () => {
       await Bun.sleep(300);
       scheduler.stop();
 
-      expect(sm.calls[0].message).toContain("<context_file");
-      expect(sm.calls[0].message).toContain("Important context here");
+      expect(sm.calls[0]!.message).toContain("<context_file");
+      expect(sm.calls[0]!.message).toContain("Important context here");
     });
 
     test("marks missing context files as not found", async () => {
@@ -250,7 +250,7 @@ describe("TaskScheduler", () => {
       await Bun.sleep(300);
       scheduler.stop();
 
-      expect(sm.calls[0].message).toContain('error="not found"');
+      expect(sm.calls[0]!.message).toContain('error="not found"');
     });
   });
 
@@ -276,8 +276,8 @@ describe("TaskScheduler", () => {
 
       // Should notify user of failure
       expect(tg.sent.length).toBe(1);
-      expect(tg.sent[0].text).toContain("Task failed");
-      expect(tg.sent[0].text).toContain("Session exploded");
+      expect(tg.sent[0]!.text).toContain("Task failed");
+      expect(tg.sent[0]!.text).toContain("Session exploded");
 
       // Should still update lastRunAt
       const updated = getTask(taskId)!;
@@ -304,7 +304,7 @@ describe("TaskScheduler", () => {
 
       expect(sm.calls.length).toBe(1);
       expect(tg.sent.length).toBe(1);
-      expect(tg.sent[0].text).toBe("Manual output");
+      expect(tg.sent[0]!.text).toBe("Manual output");
     });
 
     test("does not fire nonexistent task", () => {
@@ -335,8 +335,8 @@ describe("TaskScheduler", () => {
       await Bun.sleep(300);
       scheduler.stop();
 
-      expect(tg.sent[0].text).toBe("Useful output");
-      expect(tg.sent[0].text).not.toContain("<memory>");
+      expect(tg.sent[0]!.text).toBe("Useful output");
+      expect(tg.sent[0]!.text).not.toContain("<memory>");
     });
   });
 
@@ -355,7 +355,7 @@ describe("TaskScheduler", () => {
       scheduler.stop();
 
       expect(tg.sent.length).toBe(1);
-      expect(tg.sent[0].text).toBe("Report here");
+      expect(tg.sent[0]!.text).toBe("Report here");
     });
 
     test("notify auto suppresses when LLM says false", async () => {
@@ -397,7 +397,7 @@ describe("TaskScheduler", () => {
       scheduler.stop();
 
       expect(tg.sent.length).toBe(1);
-      expect(tg.sent[0].text).toBe("Disk full!");
+      expect(tg.sent[0]!.text).toBe("Disk full!");
     });
 
     test("notify never suppresses all output", async () => {
@@ -464,7 +464,7 @@ describe("TaskScheduler", () => {
 
       // Manual trigger should force notify despite <notify>false</notify>
       expect(tg.sent.length).toBe(1);
-      expect(tg.sent[0].text).toBe("All good.");
+      expect(tg.sent[0]!.text).toBe("All good.");
     });
   });
 
@@ -526,7 +526,7 @@ describe("TaskScheduler", () => {
       await Bun.sleep(300);
       scheduler.stop();
 
-      expect(sm.calls[0].options.model).toBe("claude-haiku-4-5-20251001");
+      expect(sm.calls[0]!.options.model).toBe("claude-haiku-4-5-20251001");
     });
 
     test("no model passes undefined", async () => {
@@ -542,7 +542,7 @@ describe("TaskScheduler", () => {
       await Bun.sleep(300);
       scheduler.stop();
 
-      expect(sm.calls[0].options.model).toBeUndefined();
+      expect(sm.calls[0]!.options.model).toBeUndefined();
     });
   });
 
@@ -563,8 +563,8 @@ describe("TaskScheduler", () => {
       await Bun.sleep(300);
       scheduler.stop();
 
-      expect(sm.calls[0].message).toContain("NOTIFICATION CONTROL");
-      expect(sm.calls[0].message).toContain("<notify>true</notify>");
+      expect(sm.calls[0]!.message).toContain("NOTIFICATION CONTROL");
+      expect(sm.calls[0]!.message).toContain("<notify>true</notify>");
     });
 
     test("does not inject notify instructions for always mode", async () => {
@@ -580,7 +580,7 @@ describe("TaskScheduler", () => {
       await Bun.sleep(300);
       scheduler.stop();
 
-      expect(sm.calls[0].message).not.toContain("NOTIFICATION CONTROL");
+      expect(sm.calls[0]!.message).not.toContain("NOTIFICATION CONTROL");
     });
   });
 });

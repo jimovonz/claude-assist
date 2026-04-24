@@ -70,8 +70,8 @@ describe("message delivery", () => {
   test("short message is sent as single message", async () => {
     await channel.reply("42", "Hello there!");
     expect(sentMessages).toHaveLength(1);
-    expect(sentMessages[0].text).toBe("Hello there!");
-    expect(sentMessages[0].chatId).toBe(42);
+    expect(sentMessages[0]!.text).toBe("Hello there!");
+    expect(sentMessages[0]!.chatId).toBe(42);
   });
 
   test("message under 4096 chars is sent as single message", async () => {
@@ -144,8 +144,8 @@ describe("view link delivery", () => {
   test("replyWithView includes the view URL in the message", async () => {
     await channel.replyWithView("42", "Summary here", "https://example.com/view/abc123");
     expect(sentMessages).toHaveLength(1);
-    expect(sentMessages[0].text).toContain("https://example.com/view/abc123");
-    expect(sentMessages[0].text).toContain("Summary here");
+    expect(sentMessages[0]!.text).toContain("https://example.com/view/abc123");
+    expect(sentMessages[0]!.text).toContain("Summary here");
   });
 });
 
@@ -168,7 +168,7 @@ describe("status updates", () => {
   test("first status sends a new message", async () => {
     await channel.sendStatus("42", "Thinking...");
     expect(sentMessages).toHaveLength(1);
-    expect(sentMessages[0].text).toBe("Thinking...");
+    expect(sentMessages[0]!.text).toBe("Thinking...");
   });
 
   test("rapid status updates within 5s do not trigger immediate edits", async () => {
@@ -186,7 +186,7 @@ describe("status updates", () => {
     await channel.reply("42", "Done!");
 
     // The reply message should be "Done!", not the status
-    const lastMessage = sentMessages[sentMessages.length - 1];
+    const lastMessage = sentMessages[sentMessages.length - 1]!;
     expect(lastMessage.text).toBe("Done!");
   });
 });
@@ -343,8 +343,8 @@ describe("sendDirect", () => {
   test("short message sends as single message", async () => {
     await channel.sendDirect(12345, "Hello");
     expect(sentMessages).toHaveLength(1);
-    expect(sentMessages[0].chatId).toBe(12345);
-    expect(sentMessages[0].text).toBe("Hello");
+    expect(sentMessages[0]!.chatId).toBe(12345);
+    expect(sentMessages[0]!.text).toBe("Hello");
   });
 
   test("message under 4096 chars sends as single message", async () => {
@@ -382,11 +382,11 @@ describe("sendDirect", () => {
   test("empty text sends single empty message", async () => {
     await channel.sendDirect(42, "");
     expect(sentMessages).toHaveLength(1);
-    expect(sentMessages[0].text).toBe("");
+    expect(sentMessages[0]!.text).toBe("");
   });
 
   test("takes numeric chatId, not string userId", async () => {
     await channel.sendDirect(99999, "Test");
-    expect(sentMessages[0].chatId).toBe(99999);
+    expect(sentMessages[0]!.chatId).toBe(99999);
   });
 });

@@ -175,7 +175,7 @@ GMAIL: You can read and manage the user's Gmail. Use the Python helpers:
       ...(options.env ? { env: { ...process.env, ...options.env } } : {}),
     });
 
-    const reader = proc.stdout!.getReader();
+    const reader = proc.stdout!.getReader() as ReadableStreamDefaultReader<Uint8Array>;
 
     const session: Session = {
       channelId,
@@ -213,8 +213,8 @@ GMAIL: You can read and manage the user's Gmail. Use the Python helpers:
       },
     });
 
-    session.proc.stdin!.write(input + "\n");
-    session.proc.stdin!.flush();
+    (session.proc.stdin as import("bun").FileSink).write(input + "\n");
+    (session.proc.stdin as import("bun").FileSink).flush();
 
     const decoder = new TextDecoder();
     let lastAssistantText = "";

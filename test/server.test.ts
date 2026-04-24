@@ -39,35 +39,35 @@ describe("health endpoint", () => {
     const res = await fetch(`${baseUrl}/health`);
     expect(res.status).toBe(200);
 
-    const body = await res.json();
+    const body = await res.json() as any;
     expect(body.status).toBe("ok");
     expect(body.service).toBe("claude-assist");
   });
 
   test("GET /health includes uptime", async () => {
     const res = await fetch(`${baseUrl}/health`);
-    const body = await res.json();
+    const body = await res.json() as any;
     expect(typeof body.uptime).toBe("number");
     expect(body.uptime).toBeGreaterThanOrEqual(0);
   });
 
   test("GET /health includes memory usage", async () => {
     const res = await fetch(`${baseUrl}/health`);
-    const body = await res.json();
+    const body = await res.json() as any;
     expect(typeof body.memoryMB).toBe("number");
     expect(body.memoryMB).toBeGreaterThan(0);
   });
 
   test("GET /health includes timestamp in ISO format", async () => {
     const res = await fetch(`${baseUrl}/health`);
-    const body = await res.json();
+    const body = await res.json() as any;
     expect(body.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
   test("GET / returns same health data as /health", async () => {
     const res = await fetch(`${baseUrl}/`);
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = await res.json() as any;
     expect(body.status).toBe("ok");
   });
 });

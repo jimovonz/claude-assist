@@ -62,7 +62,7 @@ export function App({ host, token }: AppProps) {
   const [streaming, setStreaming] = useState(false);
   const [pending, setPending] = useState(false); // between send and first text chunk
   const [incognito, setIncognito] = useState(false);
-  const [currentActions, setCurrentActions] = useState<{ id: string; label: string }[] | null>(null);
+  const [currentActions, setCurrentActions] = useState<{ id: string; label: string; type?: string; options?: string[] }[] | null>(null);
 
   // Persist messages when they change (skip during streaming)
   const prevMsgsRef = useRef(messages);
@@ -76,8 +76,8 @@ export function App({ host, token }: AppProps) {
   }, [messages]);
 
   // Refs for child key handlers — single useInput dispatches to all
-  const scrollHandlerRef = useRef<(input: string, key: any) => void>();
-  const inputHandlerRef = useRef<(input: string, key: any) => void>();
+  const scrollHandlerRef = useRef<(input: string, key: any) => void>(undefined);
+  const inputHandlerRef = useRef<(input: string, key: any) => void>(undefined);
   const streamingRef = useRef(streaming || pending);
   streamingRef.current = streaming || pending;
 
@@ -149,7 +149,7 @@ export function App({ host, token }: AppProps) {
       });
     });
 
-    conn.on("result", (text: string, actions?: { id: string; label: string }[]) => {
+    conn.on("result", (text: string, actions?: { id: string; label: string; type?: string; options?: string[] }[]) => {
       setPending(false);
       setStreaming(false);
       setStatus("");
@@ -297,7 +297,7 @@ export function App({ host, token }: AppProps) {
           setMessages([]);
           setStatus("");
         }
-        conn.sendMessage(text);
+        conn.send(text);
         return;
       }
 
@@ -305,10 +305,10 @@ export function App({ host, token }: AppProps) {
       if (currentActions && /^\d+$/.test(text)) {
         const idx = parseInt(text) - 1;
         if (idx >= 0 && idx < currentActions.length) {
-          const action = currentActions[idx];
+          const action = currentActions[idx]!;
           setMessages((prev) => [...prev, { role: "user", text: `[${action.label}]`, streaming: false }]);
           setCurrentActions(null);
-          conn.sendMessage(`[Action: ${action.label}] The user selected "${action.label}" (action: ${action.id}).`);
+          conn.send(`[Action: ${action.label}] The user selected "${action.label}" (action: ${action.id}).`);
           return;
         }
       }

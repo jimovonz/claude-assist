@@ -20,7 +20,7 @@ export function isCommand(text: string): boolean {
 
 export function handleCommand(text: string, ctx: CommandContext): CommandResult | null {
   const parts = text.trim().split(/\s+/);
-  const cmd = parts[0].toLowerCase();
+  const cmd = parts[0]!.toLowerCase();
 
   switch (cmd) {
     case "/clear":
@@ -114,29 +114,29 @@ function cmdTask(args: string[], ctx: CommandContext): CommandResult {
   }
 
   const [id, action] = args;
-  const task = getTask(id);
+  const task = getTask(id!);
   if (!task) {
     return { text: `Task "${id}" not found.` };
   }
 
-  switch (action.toLowerCase()) {
+  switch (action!.toLowerCase()) {
     case "enable": {
-      updateTask(id, { enabled: true });
+      updateTask(id!, { enabled: true });
       return { text: `Task "${task.name}" enabled.` };
     }
     case "disable": {
-      updateTask(id, { enabled: false });
+      updateTask(id!, { enabled: false });
       return { text: `Task "${task.name}" disabled.` };
     }
     case "delete": {
-      deleteTask(id);
+      deleteTask(id!);
       return { text: `Task "${task.name}" deleted.` };
     }
     case "run": {
       if (!ctx.scheduler) {
         return { text: "Scheduler not available." };
       }
-      ctx.scheduler.runTask(id);
+      ctx.scheduler.runTask(id!);
       return { text: `Task "${task.name}" triggered.` };
     }
     default:
@@ -149,7 +149,7 @@ function cmdTodo(args: string[], ctx: CommandContext): CommandResult {
     return cmdTodoList(ctx);
   }
 
-  const action = args[0].toLowerCase();
+  const action = args[0]!.toLowerCase();
   switch (action) {
     case "add":
     case "a": {
@@ -164,12 +164,12 @@ function cmdTodo(args: string[], ctx: CommandContext): CommandResult {
     case "done":
     case "d": {
       if (args.length < 2) return { text: "Usage: /todo done <id>" };
-      return cmdTodoDone(args[1], ctx);
+      return cmdTodoDone(args[1]!, ctx);
     }
     case "delete":
     case "del": {
       if (args.length < 2) return { text: "Usage: /todo delete <id>" };
-      return cmdTodoDelete(args[1], ctx);
+      return cmdTodoDelete(args[1]!, ctx);
     }
     default:
       return { text: "Usage: /todo [add|list|done|delete] ..." };

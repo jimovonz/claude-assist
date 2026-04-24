@@ -60,12 +60,12 @@ export function isEmailProcessed(emailId: string): boolean {
 }
 
 export function markEmailProcessed(emailId: string): void {
-  db().run("INSERT OR IGNORE INTO processed_emails (email_id) VALUES (?)", emailId);
+  db().run("INSERT OR IGNORE INTO processed_emails (email_id) VALUES (?)", [emailId]);
 }
 
 export function cleanupOldEmails(maxAgeMs = 7 * 24 * 60 * 60 * 1000): void {
   const cutoff = Date.now() - maxAgeMs;
-  db().run("DELETE FROM processed_emails WHERE processed_at < ?", cutoff);
+  db().run("DELETE FROM processed_emails WHERE processed_at < ?", [cutoff]);
 }
 
 export interface PersistedSession {
@@ -160,6 +160,7 @@ export interface TaskDef {
   telegramUserId: string;
   sessionStrategy: "fresh" | "resume";
   notify: "always" | "auto" | "never";
+  notifyTarget?: "dm" | "chat";
   model: string | null;
   skipCairn: boolean;
   contextQuery: string | null;

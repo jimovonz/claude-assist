@@ -61,7 +61,7 @@ export class TunnelManager {
   private async monitorOutput(): Promise<void> {
     if (!this.proc?.stderr) return;
 
-    const reader = this.proc.stderr.getReader();
+    const reader = (this.proc.stderr as ReadableStream<Uint8Array>).getReader();
     const decoder = new TextDecoder();
 
     try {

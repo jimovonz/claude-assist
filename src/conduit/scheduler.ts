@@ -185,7 +185,7 @@ export class TaskScheduler {
 
       // Run stop hook for memory capture (skip for read-only cairn tasks)
       if (response.length > 0 && !task.skipCairn) {
-        await runStopHook(sessionId, response, task.workingDirectory ?? undefined);
+        await runStopHook(sessionId, response, task.workingDirectory ?? process.cwd());
       }
 
       console.log(`[scheduler] Task "${task.name}" (${task.id}) completed (${output.length} chars)`);
@@ -227,7 +227,7 @@ export function resolveNotify(mode: string, text: string): { shouldNotify: boole
   // auto mode — Claude decides via <notify> tag
   const match = text.match(/<notify>\s*(true|false)\s*<\/notify>/i);
   if (match) {
-    const notify = match[1].toLowerCase() === "true";
+    const notify = match[1]!.toLowerCase() === "true";
     const output = text.replace(/<notify>\s*(true|false)\s*<\/notify>\s*/i, "").trim();
     return { shouldNotify: notify, output };
   }
@@ -250,11 +250,11 @@ export function cronMatches(expr: string, date: Date): boolean {
   const dayOfWeek = date.getDay(); // 0=Sunday
 
   return (
-    fieldMatches(fields[0], minute, 0, 59) &&
-    fieldMatches(fields[1], hour, 0, 23) &&
-    fieldMatches(fields[2], dayOfMonth, 1, 31) &&
-    fieldMatches(fields[3], month, 1, 12) &&
-    fieldMatches(fields[4], dayOfWeek, 0, 7) // 0 and 7 are both Sunday
+    fieldMatches(fields[0]!, minute, 0, 59) &&
+    fieldMatches(fields[1]!, hour, 0, 23) &&
+    fieldMatches(fields[2]!, dayOfMonth, 1, 31) &&
+    fieldMatches(fields[3]!, month, 1, 12) &&
+    fieldMatches(fields[4]!, dayOfWeek, 0, 7) // 0 and 7 are both Sunday
   );
 }
 
@@ -263,7 +263,9 @@ function fieldMatches(field: string, value: number, min: number, max: number): b
 
   for (const part of field.split(",")) {
     // Handle step: */5 or 1-10/2
-    const [rangeStr, stepStr] = part.split("/");
+    const splitParts = part.split("/");
+    const rangeStr = splitParts[0]!;
+    const stepStr = splitParts[1];
     const step = stepStr ? parseInt(stepStr) : 1;
 
     if (rangeStr === "*") {
@@ -273,9 +275,9 @@ function fieldMatches(field: string, value: number, min: number, max: number): b
 
     // Handle range: 1-5
     if (rangeStr.includes("-")) {
-      const [startStr, endStr] = rangeStr.split("-");
-      const start = parseInt(startStr);
-      const end = parseInt(endStr);
+      const rangeParts = rangeStr.split("-");
+      const start = parseInt(rangeParts[0]!);
+      const end = parseInt(rangeParts[1]!);
       if (value >= start && value <= end && (value - start) % step === 0) return true;
       continue;
     }

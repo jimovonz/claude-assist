@@ -7,8 +7,8 @@ describe("extractActions", () => {
     const input = 'Some text\n<action id="ack">Acknowledge</action>\nMore text';
     const { content, actions } = extractActions(input);
     expect(actions).toHaveLength(1);
-    expect(actions[0].id).toBe("ack");
-    expect(actions[0].label).toBe("Acknowledge");
+    expect(actions[0]!.id).toBe("ack");
+    expect(actions[0]!.label).toBe("Acknowledge");
     expect(content).not.toContain("<action");
     expect(content).toContain("Some text");
     expect(content).toContain("More text");
@@ -18,13 +18,13 @@ describe("extractActions", () => {
     const input = 'Report\n<action id="ack">Acknowledge</action>\n<action id="snooze">Snooze 1h</action>\n<action id="fix">Run cleanup</action>';
     const { content, actions } = extractActions(input);
     expect(actions).toHaveLength(3);
-    expect(actions[0].id).toBe("ack");
-    expect(actions[0].label).toBe("Acknowledge");
-    expect(actions[0].type).toBe("button");
-    expect(actions[1].id).toBe("snooze");
-    expect(actions[1].label).toBe("Snooze 1h");
-    expect(actions[2].id).toBe("fix");
-    expect(actions[2].label).toBe("Run cleanup");
+    expect(actions[0]!.id).toBe("ack");
+    expect(actions[0]!.label).toBe("Acknowledge");
+    expect(actions[0]!.type).toBe("button");
+    expect(actions[1]!.id).toBe("snooze");
+    expect(actions[1]!.label).toBe("Snooze 1h");
+    expect(actions[2]!.id).toBe("fix");
+    expect(actions[2]!.label).toBe("Run cleanup");
     expect(content).not.toContain("<action");
   });
 
@@ -39,8 +39,8 @@ describe("extractActions", () => {
     const input = '<action id="test" class="primary">Do it</action>';
     const { actions } = extractActions(input);
     expect(actions).toHaveLength(1);
-    expect(actions[0].id).toBe("test");
-    expect(actions[0].label).toBe("Do it");
+    expect(actions[0]!.id).toBe("test");
+    expect(actions[0]!.label).toBe("Do it");
   });
 
   test("is case-insensitive", () => {
@@ -52,39 +52,39 @@ describe("extractActions", () => {
   test("trims whitespace from id and label", () => {
     const input = '<action id=" spaced "> Padded Label </action>';
     const { actions } = extractActions(input);
-    expect(actions[0].id).toBe("spaced");
-    expect(actions[0].label).toBe("Padded Label");
+    expect(actions[0]!.id).toBe("spaced");
+    expect(actions[0]!.label).toBe("Padded Label");
   });
 
   test("extracts select type with options", () => {
     const input = '<action id="priority" type="select">\n- Low\n- Medium\n- High\n</action>';
     const { actions } = extractActions(input);
     expect(actions).toHaveLength(1);
-    expect(actions[0].type).toBe("select");
-    expect(actions[0].options).toEqual(["Low", "Medium", "High"]);
+    expect(actions[0]!.type).toBe("select");
+    expect(actions[0]!.options).toEqual(["Low", "Medium", "High"]);
   });
 
   test("extracts checkbox type with options", () => {
     const input = '<action id="cleanup" type="checkbox">\n- Clean temp\n- Clear logs\n- Prune docker\n</action>';
     const { actions } = extractActions(input);
     expect(actions).toHaveLength(1);
-    expect(actions[0].type).toBe("checkbox");
-    expect(actions[0].options).toEqual(["Clean temp", "Clear logs", "Prune docker"]);
+    expect(actions[0]!.type).toBe("checkbox");
+    expect(actions[0]!.options).toEqual(["Clean temp", "Clear logs", "Prune docker"]);
   });
 
   test("extracts text type with placeholder", () => {
     const input = '<action id="note" type="text" placeholder="Add context...">Add note</action>';
     const { actions } = extractActions(input);
     expect(actions).toHaveLength(1);
-    expect(actions[0].type).toBe("text");
-    expect(actions[0].label).toBe("Add note");
-    expect(actions[0].placeholder).toBe("Add context...");
+    expect(actions[0]!.type).toBe("text");
+    expect(actions[0]!.label).toBe("Add note");
+    expect(actions[0]!.placeholder).toBe("Add context...");
   });
 
   test("defaults to button type", () => {
     const input = '<action id="ack">Acknowledge</action>';
     const { actions } = extractActions(input);
-    expect(actions[0].type).toBe("button");
+    expect(actions[0]!.type).toBe("button");
   });
 
   test("handles mixed action types", () => {
@@ -97,10 +97,10 @@ describe("extractActions", () => {
 <action id="note" type="text" placeholder="Why?">Add reason</action>`;
     const { actions } = extractActions(input);
     expect(actions).toHaveLength(3);
-    expect(actions[0].type).toBe("button");
-    expect(actions[1].type).toBe("select");
-    expect(actions[1].options).toEqual(["nginx", "postgres"]);
-    expect(actions[2].type).toBe("text");
+    expect(actions[0]!.type).toBe("button");
+    expect(actions[1]!.type).toBe("select");
+    expect(actions[1]!.options).toEqual(["nginx", "postgres"]);
+    expect(actions[2]!.type).toBe("text");
   });
 });
 

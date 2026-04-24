@@ -57,8 +57,8 @@ export function parseTodoInput(input: string): ParsedTodo {
   // Check for "in X hours/minutes/days" pattern
   const durationMatch = text.match(/in\s+(\d+)\s+(hours?|minutes?|days?)/i);
   if (durationMatch) {
-    const amount = parseInt(durationMatch[1]);
-    const unit = durationMatch[2].toLowerCase();
+    const amount = parseInt(durationMatch[1]!);
+    const unit = durationMatch[2]!.toLowerCase();
     const reminderDate = new Date(now);
 
     if (unit.startsWith('hour')) {
@@ -76,7 +76,7 @@ export function parseTodoInput(input: string): ParsedTodo {
   if (!reminderTime) {
     const timeMatch = text.match(/(\d{1,2}):?(\d{2})?\s*(?:am|pm)?/i);
     if (timeMatch) {
-      const hour = parseInt(timeMatch[1]);
+      const hour = parseInt(timeMatch[1]!);
       const minute = timeMatch[2] ? parseInt(timeMatch[2]) : 0;
 
       const reminderDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute);
@@ -94,7 +94,7 @@ export function parseTodoInput(input: string): ParsedTodo {
   if (!reminderTime) {
     const weekdayMatch = text.match(/\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i);
     if (weekdayMatch) {
-      const dayName = weekdayMatch[1].toLowerCase();
+      const dayName = weekdayMatch[1]!.toLowerCase();
       const dayMap: Record<string, number> = {
         sunday: 0,
         monday: 1,
@@ -104,7 +104,7 @@ export function parseTodoInput(input: string): ParsedTodo {
         friday: 5,
         saturday: 6,
       };
-      const targetDay = dayMap[dayName];
+      const targetDay = dayMap[dayName]!;
       const currentDay = now.getDay();
 
       const reminderDate = new Date(now);

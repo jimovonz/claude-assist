@@ -25,7 +25,7 @@ export function classifyLine(line: string, inCode: boolean): Line {
 
   const headingMatch = line.match(/^(#{1,3})\s+(.+)$/);
   if (headingMatch) {
-    return { type: "heading", content: headingMatch[2], level: headingMatch[1].length };
+    return { type: "heading", content: headingMatch[2]!, level: headingMatch[1]!.length };
   }
 
   if (line.match(/^[-*]\s+/)) {
@@ -47,8 +47,8 @@ function renderInlineFormatting(text: string): React.ReactNode[] {
     const boldMatch = remaining.match(/^(.*?)\*\*(.+?)\*\*(.*)/s);
     if (boldMatch) {
       if (boldMatch[1]) parts.push(<Text key={key++}>{boldMatch[1]}</Text>);
-      parts.push(<Text key={key++} bold>{boldMatch[2]}</Text>);
-      remaining = boldMatch[3];
+      parts.push(<Text key={key++} bold>{boldMatch[2]!}</Text>);
+      remaining = boldMatch[3]!;
       continue;
     }
 
@@ -56,8 +56,8 @@ function renderInlineFormatting(text: string): React.ReactNode[] {
     const codeMatch = remaining.match(/^(.*?)`([^`]+)`(.*)/s);
     if (codeMatch) {
       if (codeMatch[1]) parts.push(<Text key={key++}>{codeMatch[1]}</Text>);
-      parts.push(<Text key={key++} color="cyan">{codeMatch[2]}</Text>);
-      remaining = codeMatch[3];
+      parts.push(<Text key={key++} color="cyan">{codeMatch[2]!}</Text>);
+      remaining = codeMatch[3]!;
       continue;
     }
 
@@ -65,8 +65,8 @@ function renderInlineFormatting(text: string): React.ReactNode[] {
     const italicMatch = remaining.match(/^(.*?)\*(.+?)\*(.*)/s);
     if (italicMatch) {
       if (italicMatch[1]) parts.push(<Text key={key++}>{italicMatch[1]}</Text>);
-      parts.push(<Text key={key++} italic>{italicMatch[2]}</Text>);
-      remaining = italicMatch[3];
+      parts.push(<Text key={key++} italic>{italicMatch[2]!}</Text>);
+      remaining = italicMatch[3]!;
       continue;
     }
 

@@ -1,7 +1,7 @@
 import { randomBytes } from "crypto";
 import type { ServerWebSocket } from "bun";
-import type { Channel } from "../router";
-import type { SessionManager } from "../session";
+import type { Channel } from "../../router";
+import type { SessionManager } from "../../session";
 import { extractActions } from "../../../views/renderer";
 
 export interface WebSocketChannelConfig {

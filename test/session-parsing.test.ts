@@ -77,7 +77,7 @@ describe("parseStreamMessage", () => {
     };
     const { events } = parseStreamMessage(msg, "");
     expect(events).toHaveLength(1);
-    expect(events[0].type).toBe("status");
+    expect(events[0]!.type).toBe("status");
     expect((events[0] as any).text).toContain("Reading");
     expect((events[0] as any).text).toContain("main.ts");
   });
@@ -104,7 +104,7 @@ describe("parseStreamMessage", () => {
     };
     const { events } = parseStreamMessage(msg, "");
     expect(events).toHaveLength(2);
-    expect(events[0].type).toBe("status");
+    expect(events[0]!.type).toBe("status");
     expect(events[1]).toEqual({ type: "text", text: "Done running" });
   });
 
@@ -118,7 +118,7 @@ describe("parseStreamMessage", () => {
     };
     const { events } = parseStreamMessage(msg, "");
     expect(events).toHaveLength(1);
-    expect(events[0].type).toBe("result");
+    expect(events[0]!.type).toBe("result");
     expect((events[0] as any).text).toBe("Final answer");
     expect((events[0] as any).sessionId).toBe("sess-abc");
   });

@@ -7,11 +7,12 @@ import { randomBytes } from "crypto";
 export type ConnectionState = "disconnected" | "connecting" | "authenticating" | "connected";
 
 export interface ConduitMessage {
-  type: "auth_ok" | "auth_fail" | "status" | "text" | "text_end" | "result" | "error" | "ping" | "cancelled";
+  type: "auth_ok" | "auth_fail" | "status" | "text" | "text_end" | "result" | "error" | "ping" | "cancelled" | "command_ok";
   text?: string;
   reason?: string;
   userId?: string;
   aborted?: boolean;
+  actions?: any[];
 }
 
 const STATE_DIR = process.env.CONDUIT_STATE_DIR ?? join(homedir(), ".local", "state", "claude-assist");

@@ -42,9 +42,9 @@ function generateSlug(title: string, content: string): string {
   if (!base) {
     const headingMatch = content.match(/^#{1,3}\s+(.+)$/m);
     if (headingMatch) {
-      base = headingMatch[1];
+      base = headingMatch[1]!;
     } else {
-      base = content.split("\n")[0].substring(0, 60);
+      base = (content.split("\n")[0] ?? "").substring(0, 60);
     }
   }
 

@@ -257,7 +257,7 @@ describe("EmailAgent dedup integration", () => {
 
     // Claude should only have seen new-001 and new-002 (not old-001)
     expect(sm.calls).toHaveLength(1);
-    const prompt = sm.calls[0].message;
+    const prompt = sm.calls[0]!.message;
     expect(prompt).not.toContain("old-001");
     expect(prompt).toContain("new-001");
     expect(prompt).toContain("new-002");

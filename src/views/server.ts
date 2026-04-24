@@ -48,22 +48,25 @@ export class ViewServer {
   start() {
     const wsChannel = this.wsChannel;
 
-    this.server = Bun.serve({
+    const serveOptions: any = {
       port: this.port,
-      fetch: (req: Request, server: any) => {
+      fetch: (req: Request, server: any): Response | Promise<Response> => {
         const url = new URL(req.url);
         if (url.pathname === "/ws" && wsChannel) {
-          if (server.upgrade(req, { data: {} })) return;
+          if (server.upgrade(req, { data: {} })) return new Response(null, { status: 101 });
           return new Response("WebSocket upgrade failed", { status: 400 });
         }
         return this.handleRequest(req);
       },
-      websocket: wsChannel ? {
+    };
+    if (wsChannel) {
+      serveOptions.websocket = {
         open: (ws: any) => wsChannel.handleOpen(ws),
         message: (ws: any, data: any) => wsChannel.handleMessage(ws, String(data)),
         close: (ws: any) => wsChannel.handleClose(ws),
-      } : undefined,
-    });
+      };
+    }
+    this.server = Bun.serve(serveOptions);
 
     console.log(`[views] Server listening on ${this._baseUrl}${wsChannel ? " (WebSocket on /ws)" : ""}`);
 

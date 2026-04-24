@@ -74,10 +74,10 @@ async function start() {
       if (event.type === "result" && event.text) {
         const parts = channelId.split(":");
         if (parts[0] === "telegram") {
-          await telegram.reply(parts[1], event.text);
+          await telegram.reply(parts[1]!, event.text);
         } else if (parts[0] === "task") {
           const { getTask } = await import("../src/conduit/state");
-          const task = getTask(parts[1]);
+          const task = getTask(parts[1]!);
           if (task) await telegram.reply(task.telegramUserId, event.text);
         }
       }

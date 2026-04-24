@@ -38,6 +38,8 @@ export class EdgeRelay implements Channel {
   private reconnectDelay = 1000;
   private onAction?: ActionHandler;
   private emailAgent?: EmailAgent;
+  private pingInterval: Timer | null = null;
+  private lastPong = 0;
 
   constructor(config: EdgeRelayConfig) {
     this.edgeUrl = config.edgeUrl;
@@ -55,6 +57,7 @@ export class EdgeRelay implements Channel {
 
   async stop() {
     this.stopped = true;
+    if (this.pingInterval) clearInterval(this.pingInterval);
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     if (this.ws) {
       this.ws.close(1000, "Shutting down");
@@ -79,17 +82,24 @@ export class EdgeRelay implements Channel {
     this.ws.onopen = () => {
       console.log(`[edge-relay] Connected to edge: ${this.wsUrl}`);
       this.reconnectDelay = 1000;
+      this.lastPong = Date.now();
+      this.startKeepalive();
     };
 
     this.ws.onmessage = (event) => {
       try {
         const data = JSON.parse(String(event.data));
+        if (data.type === "pong") {
+          this.lastPong = Date.now();
+          return;
+        }
         this.handleEdgeMessage(data);
       } catch {}
     };
 
     this.ws.onclose = () => {
       console.log("[edge-relay] Disconnected from edge");
+      this.stopKeepalive();
       this.ws = null;
       this.scheduleReconnect();
     };
@@ -97,6 +107,32 @@ export class EdgeRelay implements Channel {
     this.ws.onerror = (event) => {
       console.error(`[edge-relay] WebSocket error`);
     };
+  }
+
+  private startKeepalive() {
+    this.stopKeepalive();
+    this.pingInterval = setInterval(() => {
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+
+      const silenceMs = Date.now() - this.lastPong;
+      if (silenceMs > 90_000) {
+        console.log(`[edge-relay] No pong for ${Math.round(silenceMs / 1000)}s — forcing reconnect`);
+        this.stopKeepalive();
+        this.ws.close();
+        this.ws = null;
+        this.scheduleReconnect();
+        return;
+      }
+
+      this.ws.send(JSON.stringify({ type: "ping" }));
+    }, 30_000);
+  }
+
+  private stopKeepalive() {
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+      this.pingInterval = null;
+    }
   }
 
   private scheduleReconnect() {

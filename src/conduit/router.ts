@@ -1,5 +1,5 @@
 import { SessionManager, type SessionEvent } from "./session";
-import { runStopHook, runPromptHook } from "./hooks";
+import { runStopHook, runPromptHook, type StopHookResult } from "./hooks";
 import { createViewAsync, shouldCreateView, EDGE_URL } from "../views/renderer";
 import type { ViewServer } from "../views/server";
 import { isCommand, handleCommand, type CommandContext } from "./commands";
@@ -31,10 +31,10 @@ export function stripMetadata(text: string): string {
 export function extractTitle(text: string): string {
   // Try first markdown heading
   const heading = text.match(/^#{1,3}\s+(.+)$/m);
-  if (heading) return heading[1].substring(0, 80);
+  if (heading) return heading[1]!.substring(0, 80);
   // Try first bold text
   const bold = text.match(/\*\*(.+?)\*\*/);
-  if (bold) return bold[1].substring(0, 80);
+  if (bold) return bold[1]!.substring(0, 80);
   // Fall back to first non-empty line
   const firstLine = text.split("\n").find(l => l.trim().length > 0);
   if (firstLine) return firstLine.trim().substring(0, 80);
@@ -42,7 +42,7 @@ export function extractTitle(text: string): string {
 }
 
 export function summarize(text: string, maxLen = 200): string {
-  const firstPara = text.split("\n\n")[0];
+  const firstPara = text.split("\n\n")[0]!;
   if (firstPara.length <= maxLen) return firstPara;
   return firstPara.substring(0, maxLen) + "...";
 }
@@ -59,7 +59,7 @@ const HEARTBEAT_MESSAGES = [
 ];
 
 function randomHeartbeat(): string {
-  return HEARTBEAT_MESSAGES[Math.floor(Math.random() * HEARTBEAT_MESSAGES.length)];
+  return HEARTBEAT_MESSAGES[Math.floor(Math.random() * HEARTBEAT_MESSAGES.length)]!;
 }
 
 export interface Channel {
@@ -279,7 +279,7 @@ export class Router {
       }
 
       // Post-message hook (runs after result is sent — no delay for user)
-      let stopResult = { block: false, reason: undefined as string | undefined };
+      let stopResult: StopHookResult = { block: false };
       if (response.length > 0) {
         stopResult = await runStopHook(currentSessionId, response, DEFAULT_CWD);
       }

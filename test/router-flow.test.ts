@@ -89,7 +89,7 @@ describe("message processing flow", () => {
     // Channel should have received a reply
     expect(channel.replies.length).toBeGreaterThanOrEqual(1);
     const finalReply = channel.replies[channel.replies.length - 1];
-    expect(finalReply.text).toContain("Response to:");
+    expect(finalReply!.text).toContain("Response to:");
 
     await router.stop();
   }, 10000);
@@ -132,9 +132,9 @@ describe("message processing flow", () => {
     await Bun.sleep(2000);
 
     const finalReply = channel.replies[channel.replies.length - 1];
-    expect(finalReply.text).not.toContain("<memory>");
-    expect(finalReply.text).not.toContain("<cairn_context");
-    expect(finalReply.text).not.toContain("<system-reminder>");
+    expect(finalReply!.text).not.toContain("<memory>");
+    expect(finalReply!.text).not.toContain("<cairn_context");
+    expect(finalReply!.text).not.toContain("<system-reminder>");
 
     await router.stop();
   }, 10000);
@@ -153,7 +153,7 @@ describe("message processing flow", () => {
 
     // Should get "No response generated." for empty result
     const finalReply = channel.replies[channel.replies.length - 1];
-    expect(finalReply.text).toContain("No response generated");
+    expect(finalReply!.text).toContain("No response generated");
 
     await router.stop();
   }, 10000);
@@ -174,7 +174,7 @@ describe("message processing flow", () => {
     expect(channel.replies.length).toBeGreaterThanOrEqual(1);
     const reply = channel.replies[channel.replies.length - 1];
     expect(
-      reply.text.includes("No response generated") || reply.text.includes("Error")
+      reply!.text.includes("No response generated") || reply!.text.includes("Error")
     ).toBe(true);
 
     await router.stop();
